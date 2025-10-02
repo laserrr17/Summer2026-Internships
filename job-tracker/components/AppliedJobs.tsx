@@ -62,6 +62,8 @@ export default function AppliedJobs() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
 
   useEffect(() => {
     // Listen to auth state changes
@@ -176,6 +178,20 @@ export default function AppliedJobs() {
         return new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime();
       });
   }, [jobs, searchTerm, categoryFilter]);
+
+  // Paginated jobs
+  const paginatedJobs = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredJobs.slice(startIndex, endIndex);
+  }, [filteredJobs, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(filteredJobs.length / itemsPerPage);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, categoryFilter]);
 
   const categories = useMemo(() => {
     const cats = new Set(jobs.filter(j => j.applied).map(job => job.category));
@@ -322,7 +338,7 @@ export default function AppliedJobs() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredJobs.map((job) => (
+                  paginatedJobs.map((job) => (
                     <TableRow 
                       key={job.id}
                       className="cursor-pointer hover:bg-muted/50 transition-colors"
@@ -363,8 +379,71 @@ export default function AppliedJobs() {
         </CardContent>
       </Card>
 
-      <div className="mt-4 text-sm text-muted-foreground text-center">
-        Showing {filteredJobs.length} applied job{filteredJobs.length !== 1 ? 's' : ''}
+      {/* Pagination Controls */}
+      <div className="mt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Items per page:</span>
+          <Select 
+            value={itemsPerPage.toString()} 
+            onValueChange={(value) => {
+              setItemsPerPage(Number(value));
+              setCurrentPage(1);
+            }}
+          >
+            <SelectTrigger className="w-[100px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="25">25</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+              <SelectItem value="100">100</SelectItem>
+              <SelectItem value="200">200</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="text-sm text-muted-foreground">
+          Showing {filteredJobs.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1} to{' '}
+          {Math.min(currentPage * itemsPerPage, filteredJobs.length)} of {filteredJobs.length} applied jobs
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(1)}
+            disabled={currentPage === 1}
+          >
+            First
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground px-2">
+            Page {currentPage} of {totalPages || 1}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages || totalPages === 0}
+          >
+            Next
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={currentPage === totalPages || totalPages === 0}
+          >
+            Last
+          </Button>
+        </div>
       </div>
     </div>
   );
