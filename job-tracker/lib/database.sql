@@ -106,3 +106,34 @@ CREATE POLICY "Users can delete their own not suitable jobs"
 GRANT ALL ON not_suitable_jobs TO authenticated;
 GRANT USAGE, SELECT ON SEQUENCE not_suitable_jobs_id_seq TO authenticated;
 
+-- Create jobs table to store all available jobs
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  company TEXT NOT NULL,
+  role TEXT NOT NULL,
+  location TEXT NOT NULL,
+  category TEXT NOT NULL,
+  age TEXT NOT NULL,
+  application_url TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  is_active BOOLEAN DEFAULT TRUE
+);
+
+-- Create index for faster queries
+CREATE INDEX IF NOT EXISTS idx_jobs_category ON jobs(category);
+CREATE INDEX IF NOT EXISTS idx_jobs_is_active ON jobs(is_active);
+CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies: All authenticated users can read jobs
+CREATE POLICY "Authenticated users can view active jobs"
+  ON jobs
+  FOR SELECT
+  USING (auth.role() = 'authenticated' AND is_active = true);
+
+-- Grant read access to authenticated users
+GRANT SELECT ON jobs TO authenticated;
+

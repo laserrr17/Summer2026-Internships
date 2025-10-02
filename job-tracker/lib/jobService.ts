@@ -16,6 +16,58 @@ export interface AppliedJob {
 }
 
 /**
+ * Fetch all jobs from the backend API
+ */
+export async function fetchJobs(): Promise<Job[]> {
+  try {
+    const response = await fetch('/api/jobs');
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch jobs: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Transform database jobs to Job format
+    return (data.jobs || []).map((job: any) => ({
+      id: job.id,
+      company: job.company,
+      role: job.role,
+      location: job.location,
+      category: job.category,
+      age: job.age,
+      applicationUrl: job.application_url,
+      applied: false,
+      notSuitable: false
+    }));
+  } catch (error) {
+    console.error('Failed to fetch jobs:', error);
+    return [];
+  }
+}
+
+/**
+ * Sync jobs from GitHub to database
+ */
+export async function syncJobs(): Promise<{ success: boolean; count?: number; error?: string }> {
+  try {
+    const response = await fetch('/api/jobs', {
+      method: 'POST',
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to sync jobs: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return { success: true, count: data.count };
+  } catch (error) {
+    console.error('Failed to sync jobs:', error);
+    return { success: false, error: 'Failed to sync jobs' };
+  }
+}
+
+/**
  * Get all applied jobs for the current user
  * Returns a Map of job_id -> applied_at timestamp
  */

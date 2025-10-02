@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Job, fetchReadmeFromGitHub, parseReadme } from '@/lib/parseReadme';
+import type { Job } from '@/lib/parseReadme';
 import { signIn, signUp, signOut, onAuthStateChange } from '@/lib/authService';
-import { getAppliedJobs, toggleJobApplication, getNotSuitableJobs, toggleJobNotSuitable } from '@/lib/jobService';
+import { fetchJobs, syncJobs, getAppliedJobs, toggleJobApplication, getNotSuitableJobs, toggleJobNotSuitable } from '@/lib/jobService';
 import { exportAppliedJobs } from '@/lib/storage';
 import AuthForm from '@/components/AuthForm';
 import { Input } from '@/components/ui/input';
@@ -63,16 +63,14 @@ export default function JobTracker() {
   const loadJobs = async () => {
     setLoading(true);
     try {
-      const [readme, applied, notSuitable] = await Promise.all([
-        fetchReadmeFromGitHub(),
+      const [jobsList, applied, notSuitable] = await Promise.all([
+        fetchJobs(),
         getAppliedJobs(),
         getNotSuitableJobs()
       ]);
       
-      const parsedJobs = parseReadme(readme);
-      
       // Merge applied status and timestamp
-      const jobsWithStatus = parsedJobs.map(job => ({
+      const jobsWithStatus = jobsList.map(job => ({
         ...job,
         applied: applied.has(job.id),
         appliedAt: applied.get(job.id),
@@ -85,6 +83,24 @@ export default function JobTracker() {
     } catch (error) {
       console.error('Failed to load jobs:', error);
       alert('Failed to load job listings. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSyncJobs = async () => {
+    setLoading(true);
+    try {
+      const result = await syncJobs();
+      if (result.success) {
+        alert(`Successfully synced ${result.count} jobs from GitHub!`);
+        await loadJobs();
+      } else {
+        alert('Failed to sync jobs. Please try again.');
+      }
+    } catch (error) {
+      console.error('Failed to sync jobs:', error);
+      alert('Failed to sync jobs. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -323,10 +339,28 @@ export default function JobTracker() {
                 </SelectContent>
               </Select>
               <div className="flex gap-2">
-                <Button onClick={loadJobs} variant="outline" size="icon">
+                <Button 
+                  onClick={loadJobs} 
+                  variant="outline" 
+                  size="icon"
+                  title="Refresh job list"
+                >
                   <RefreshCw className="w-4 h-4" />
                 </Button>
-                <Button onClick={handleExport} variant="outline" size="icon">
+                <Button 
+                  onClick={handleSyncJobs} 
+                  variant="outline" 
+                  size="sm"
+                  title="Sync jobs from GitHub"
+                >
+                  Sync
+                </Button>
+                <Button 
+                  onClick={handleExport} 
+                  variant="outline" 
+                  size="icon"
+                  title="Export applied jobs"
+                >
                   <Download className="w-4 h-4" />
                 </Button>
               </div>
