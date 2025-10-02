@@ -104,6 +104,8 @@ export default function AppliedJobs() {
       setJobs(jobsWithStatus);
       setAppliedJobs(applied);
       setNotSuitableJobs(notSuitable);
+      // Reset to first page when data refreshes to prevent empty page view
+      setCurrentPage(1);
     } catch (error) {
       console.error('Failed to load jobs:', error);
       alert('Failed to load job listings. Please try again later.');
@@ -287,28 +289,28 @@ export default function AppliedJobs() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card>
+        <Card className="border-l-4 border-l-green-500 bg-gradient-to-br from-green-50 to-white dark:from-green-950/20 dark:to-background">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Applied</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.applied}</div>
+            <div className="text-3xl font-bold text-green-600 dark:text-green-400">{stats.applied}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-l-4 border-l-purple-500 bg-gradient-to-br from-purple-50 to-white dark:from-purple-950/20 dark:to-background">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Jobs</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
+            <div className="text-3xl font-bold text-purple-600 dark:text-purple-400">{stats.total}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-l-4 border-l-blue-500 bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/20 dark:to-background">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Remaining</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.remaining}</div>
+            <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{stats.remaining}</div>
           </CardContent>
         </Card>
       </div>
@@ -338,10 +340,20 @@ export default function AppliedJobs() {
               </SelectContent>
             </Select>
             <div className="flex gap-2">
-              <Button onClick={loadJobs} variant="outline" size="icon">
+              <Button 
+                onClick={loadJobs} 
+                variant="outline" 
+                size="icon"
+                className="hover:bg-blue-100 hover:border-blue-400 dark:hover:bg-blue-950/50"
+              >
                 <RefreshCw className="w-4 h-4" />
               </Button>
-              <Button onClick={handleExport} variant="outline" size="icon">
+              <Button 
+                onClick={handleExport} 
+                variant="outline" 
+                size="icon"
+                className="hover:bg-green-100 hover:border-green-400 dark:hover:bg-green-950/50"
+              >
                 <Download className="w-4 h-4" />
               </Button>
             </div>
@@ -354,15 +366,15 @@ export default function AppliedJobs() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[80px]">Remove</TableHead>
-                  <TableHead className="w-[100px]">Not Suitable</TableHead>
-                  <TableHead className="w-[200px]">Company</TableHead>
-                  <TableHead className="w-[250px]">Role</TableHead>
-                  <TableHead className="w-[180px]">Location</TableHead>
-                  <TableHead className="w-[120px]">Category</TableHead>
-                  <TableHead className="w-[120px]">Applied Date</TableHead>
-                  <TableHead className="w-[80px]">Age</TableHead>
+                <TableRow className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30">
+                  <TableHead className="px-2 py-3">✓</TableHead>
+                  <TableHead className="px-2 py-3">✗</TableHead>
+                  <TableHead className="px-3 py-3">Company</TableHead>
+                  <TableHead className="px-3 py-3">Role</TableHead>
+                  <TableHead className="px-3 py-3">Location</TableHead>
+                  <TableHead className="px-2 py-3">Category</TableHead>
+                  <TableHead className="px-2 py-3">Applied</TableHead>
+                  <TableHead className="px-2 py-3">Age</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -373,51 +385,73 @@ export default function AppliedJobs() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedJobs.map((job) => (
-                    <TableRow 
-                      key={job.id}
-                      className={`cursor-pointer hover:bg-muted/50 transition-colors ${job.notSuitable ? 'opacity-50' : ''}`}
-                      onClick={(e) => {
-                        // Don't navigate if clicking on checkbox or button
-                        if ((e.target as HTMLElement).closest('[role="checkbox"]') || 
-                            (e.target as HTMLElement).closest('button')) {
-                          return;
-                        }
-                        if (job.applicationUrl) {
-                          window.open(job.applicationUrl, '_blank', 'noopener,noreferrer');
-                        }
-                      }}
-                    >
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={job.applied}
-                          onCheckedChange={() => handleToggleApplied(job)}
-                        />
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          variant={job.notSuitable ? "destructive" : "ghost"}
-                          size="sm"
-                          onClick={() => handleToggleNotSuitable(job)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <XCircle className="w-4 h-4" />
-                        </Button>
-                      </TableCell>
-                      <TableCell className="font-medium">{job.company}</TableCell>
-                      <TableCell>{job.role}</TableCell>
-                      <TableCell>{job.location}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="whitespace-nowrap">
-                          {job.category}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {formatAppliedDate(job.appliedAt)}
-                      </TableCell>
-                      <TableCell>{job.age}</TableCell>
-                    </TableRow>
-                  ))
+                  paginatedJobs.map((job) => {
+                    // Determine row color based on applied date freshness
+                    const daysAgo = job.appliedAt 
+                      ? Math.floor((new Date().getTime() - new Date(job.appliedAt).getTime()) / (1000 * 60 * 60 * 24))
+                      : 999;
+                    
+                    let rowColorClass = '';
+                    if (daysAgo === 0) {
+                      rowColorClass = 'bg-green-50 dark:bg-green-950/10 hover:bg-green-100 dark:hover:bg-green-950/20';
+                    } else if (daysAgo <= 3) {
+                      rowColorClass = 'bg-blue-50 dark:bg-blue-950/10 hover:bg-blue-100 dark:hover:bg-blue-950/20';
+                    } else if (daysAgo <= 7) {
+                      rowColorClass = 'bg-yellow-50 dark:bg-yellow-950/10 hover:bg-yellow-100 dark:hover:bg-yellow-950/20';
+                    } else {
+                      rowColorClass = 'hover:bg-muted/50';
+                    }
+
+                    return (
+                      <TableRow 
+                        key={job.id}
+                        className={`cursor-pointer transition-colors ${job.notSuitable ? 'opacity-40' : ''} ${rowColorClass}`}
+                        onClick={(e) => {
+                          // Don't navigate if clicking on checkbox or button
+                          if ((e.target as HTMLElement).closest('[role="checkbox"]') || 
+                              (e.target as HTMLElement).closest('button')) {
+                            return;
+                          }
+                          if (job.applicationUrl) {
+                            window.open(job.applicationUrl, '_blank', 'noopener,noreferrer');
+                          }
+                        }}
+                      >
+                        <TableCell className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={job.applied}
+                            onCheckedChange={() => handleToggleApplied(job)}
+                            className="border-green-500 data-[state=checked]:bg-green-500"
+                          />
+                        </TableCell>
+                        <TableCell className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant={job.notSuitable ? "destructive" : "ghost"}
+                            size="sm"
+                            onClick={() => handleToggleNotSuitable(job)}
+                            className="h-7 w-7 p-0"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                          </Button>
+                        </TableCell>
+                        <TableCell className="font-semibold px-3 py-2 text-blue-700 dark:text-blue-300">{job.company}</TableCell>
+                        <TableCell className="px-3 py-2">{job.role}</TableCell>
+                        <TableCell className="px-3 py-2 text-sm">{job.location}</TableCell>
+                        <TableCell className="px-2 py-2">
+                          <Badge 
+                            variant="outline" 
+                            className="whitespace-nowrap text-xs bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-700"
+                          >
+                            {job.category}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-xs px-2 py-2 font-medium">
+                          {formatAppliedDate(job.appliedAt)}
+                        </TableCell>
+                        <TableCell className="px-2 py-2 text-sm">{job.age}</TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
