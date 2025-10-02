@@ -20,16 +20,20 @@ export interface AppliedJob {
  */
 export async function fetchJobs(): Promise<Job[]> {
   try {
+    console.log('Fetching jobs from /api/jobs...');
     const response = await fetch('/api/jobs');
     
     if (!response.ok) {
-      throw new Error(`Failed to fetch jobs: ${response.status}`);
+      const errorData = await response.json();
+      console.error('Failed to fetch jobs:', response.status, errorData);
+      throw new Error(`Failed to fetch jobs: ${response.status} - ${errorData.error || 'Unknown error'}`);
     }
     
     const data = await response.json();
+    console.log(`Fetched ${data.count || 0} jobs from database:`, data);
     
     // Transform database jobs to Job format
-    return (data.jobs || []).map((job: any) => ({
+    const jobs = (data.jobs || []).map((job: any) => ({
       id: job.id,
       company: job.company,
       role: job.role,
@@ -40,6 +44,9 @@ export async function fetchJobs(): Promise<Job[]> {
       applied: false,
       notSuitable: false
     }));
+    
+    console.log(`Transformed ${jobs.length} jobs for display`);
+    return jobs;
   } catch (error) {
     console.error('Failed to fetch jobs:', error);
     return [];
@@ -55,15 +62,20 @@ export async function syncJobs(): Promise<{ success: boolean; count?: number; er
       method: 'POST',
     });
     
+    const data = await response.json();
+    
     if (!response.ok) {
-      throw new Error(`Failed to sync jobs: ${response.status}`);
+      console.error('Sync failed:', data);
+      return { 
+        success: false, 
+        error: data.error || `Failed to sync jobs: ${response.status}` 
+      };
     }
     
-    const data = await response.json();
     return { success: true, count: data.count };
   } catch (error) {
     console.error('Failed to sync jobs:', error);
-    return { success: false, error: 'Failed to sync jobs' };
+    return { success: false, error: 'Failed to sync jobs. Please check your network connection.' };
   }
 }
 

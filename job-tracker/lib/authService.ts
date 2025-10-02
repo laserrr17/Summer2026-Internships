@@ -18,6 +18,16 @@ export async function signUp(email: string, password: string): Promise<AuthRespo
     });
 
     if (error) {
+      console.error('Sign up error:', error);
+      
+      // Provide user-friendly error messages
+      if (error.message.includes('already registered')) {
+        return { success: false, error: 'This email is already registered. Please sign in instead.' };
+      }
+      if (error.message.includes('Password should be')) {
+        return { success: false, error: 'Password must be at least 6 characters long.' };
+      }
+      
       return { success: false, error: error.message };
     }
 
@@ -27,7 +37,8 @@ export async function signUp(email: string, password: string): Promise<AuthRespo
 
     return { success: true, user: data.user };
   } catch (error) {
-    return { success: false, error: 'An unexpected error occurred' };
+    console.error('Unexpected sign up error:', error);
+    return { success: false, error: 'An unexpected error occurred. Please check your internet connection and try again.' };
   }
 }
 
@@ -42,6 +53,16 @@ export async function signIn(email: string, password: string): Promise<AuthRespo
     });
 
     if (error) {
+      console.error('Sign in error:', error);
+      
+      // Provide user-friendly error messages
+      if (error.message.includes('Invalid login credentials')) {
+        return { success: false, error: 'Invalid email or password. Please check your credentials and try again.' };
+      }
+      if (error.message.includes('Email not confirmed')) {
+        return { success: false, error: 'Please confirm your email address before signing in.' };
+      }
+      
       return { success: false, error: error.message };
     }
 
@@ -51,7 +72,8 @@ export async function signIn(email: string, password: string): Promise<AuthRespo
 
     return { success: true, user: data.user };
   } catch (error) {
-    return { success: false, error: 'An unexpected error occurred' };
+    console.error('Unexpected sign in error:', error);
+    return { success: false, error: 'An unexpected error occurred. Please check your internet connection and try again.' };
   }
 }
 

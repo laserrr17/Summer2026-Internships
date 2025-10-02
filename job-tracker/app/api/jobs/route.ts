@@ -7,6 +7,7 @@ const REPO_URL = 'https://raw.githubusercontent.com/SimplifyJobs/Summer2026-Inte
 // Create a server-side Supabase client
 function getSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  // For POST (sync), use service role key. For GET, can use anon key.
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   return createClient(supabaseUrl, supabaseServiceKey);
 }
@@ -47,9 +48,13 @@ export async function GET() {
       );
     }
 
+    // Filter out jobs without application URLs
+    const jobsWithUrls = (jobs || []).filter(job => job.application_url && job.application_url.trim() !== '');
+    console.log(`Returning ${jobsWithUrls.length} jobs with URLs (filtered out ${(jobs?.length || 0) - jobsWithUrls.length} without URLs)`);
+
     return NextResponse.json({ 
-      jobs: jobs || [],
-      count: jobs?.length || 0
+      jobs: jobsWithUrls,
+      count: jobsWithUrls.length
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -73,8 +78,20 @@ export async function POST() {
       );
     }
 
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      console.error('Missing SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_ANON_KEY');
+    // Check for service role key - required for syncing jobs
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('Missing SUPABASE_SERVICE_ROLE_KEY - required for syncing jobs');
+      return NextResponse.json(
+        { 
+          error: 'Server configuration error: SUPABASE_SERVICE_ROLE_KEY is required for syncing jobs. Please add it to your environment variables.',
+          details: 'The service role key is needed to bypass Row Level Security when inserting jobs into the database.'
+        },
+        { status: 500 }
+      );
+    }
+
+    if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY');
       return NextResponse.json(
         { error: 'Server configuration error: Missing database credentials' },
         { status: 500 }
@@ -101,13 +118,17 @@ export async function POST() {
     const readme = await response.text();
     console.log(`Fetched README (${readme.length} bytes)`);
     
-    const jobs = parseReadme(readme);
-    console.log(`Parsed ${jobs.length} jobs from README`);
+    const allJobs = parseReadme(readme);
+    console.log(`Parsed ${allJobs.length} jobs from README`);
+
+    // Filter out jobs without application URLs
+    const jobs = allJobs.filter(job => job.applicationUrl && job.applicationUrl.trim() !== '');
+    console.log(`Filtered to ${jobs.length} jobs with application URLs (removed ${allJobs.length - jobs.length} without URLs)`);
 
     if (jobs.length === 0) {
-      console.warn('No jobs parsed from README');
+      console.warn('No jobs with application URLs found in README');
       return NextResponse.json(
-        { error: 'No jobs found in README', warning: true },
+        { error: 'No jobs with application URLs found in README', warning: true },
         { status: 200 }
       );
     }
@@ -144,7 +165,7 @@ export async function POST() {
     }));
 
     console.log(`Upserting ${jobsToUpsert.length} jobs...`);
-    const { error: upsertError } = await supabase
+    const { error: upsertError, count } = await supabase
       .from('jobs')
       .upsert(jobsToUpsert, { 
         onConflict: 'id',
@@ -153,8 +174,28 @@ export async function POST() {
 
     if (upsertError) {
       console.error('Error upserting jobs:', upsertError);
+      console.error('Error code:', upsertError.code);
+      console.error('Error details:', upsertError.details);
+      console.error('Error hint:', upsertError.hint);
+      
+      // Provide helpful error message for RLS issues
+      if (upsertError.code === '42501' || upsertError.message.includes('policy')) {
+        return NextResponse.json(
+          { 
+            error: 'Permission denied: SUPABASE_SERVICE_ROLE_KEY is required',
+            details: 'The jobs table requires service role permissions to insert/update. Please ensure SUPABASE_SERVICE_ROLE_KEY is set in your environment variables.',
+            supabaseError: upsertError.message
+          },
+          { status: 500 }
+        );
+      }
+      
       return NextResponse.json(
-        { error: `Failed to sync jobs to database: ${upsertError.message}` },
+        { 
+          error: `Failed to sync jobs to database: ${upsertError.message}`,
+          code: upsertError.code,
+          details: upsertError.details
+        },
         { status: 500 }
       );
     }

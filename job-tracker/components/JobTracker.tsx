@@ -63,11 +63,14 @@ export default function JobTracker() {
   const loadJobs = async () => {
     setLoading(true);
     try {
+      console.log('Loading jobs and user data...');
       const [jobsList, applied, notSuitable] = await Promise.all([
         fetchJobs(),
         getAppliedJobs(),
         getNotSuitableJobs()
       ]);
+      
+      console.log(`Loaded: ${jobsList.length} jobs, ${applied.size} applied, ${notSuitable.size} not suitable`);
       
       // Merge applied status and timestamp
       const jobsWithStatus = jobsList.map(job => ({
@@ -80,6 +83,8 @@ export default function JobTracker() {
       setJobs(jobsWithStatus);
       setAppliedJobs(applied);
       setNotSuitableJobs(notSuitable);
+      
+      console.log(`Jobs loaded successfully. Total: ${jobsWithStatus.length}`);
     } catch (error) {
       console.error('Failed to load jobs:', error);
       alert('Failed to load job listings. Please try again later.');
@@ -96,11 +101,13 @@ export default function JobTracker() {
         alert(`Successfully synced ${result.count} jobs from GitHub!`);
         await loadJobs();
       } else {
-        alert('Failed to sync jobs. Please try again.');
+        const errorMsg = result.error || 'Failed to sync jobs. Please try again.';
+        console.error('Sync error:', errorMsg);
+        alert(errorMsg);
       }
     } catch (error) {
       console.error('Failed to sync jobs:', error);
-      alert('Failed to sync jobs. Please try again.');
+      alert('Failed to sync jobs. Please check console for details.');
     } finally {
       setLoading(false);
     }
@@ -398,10 +405,23 @@ export default function JobTracker() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredJobs.length === 0 ? (
+                {jobs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-12">
+                      <div className="flex flex-col items-center gap-4">
+                        <p className="text-lg font-medium">No jobs in database</p>
+                        <p className="text-sm text-muted-foreground">Click the "Sync" button above to load jobs from GitHub</p>
+                        <Button onClick={handleSyncJobs} variant="default">
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Sync Jobs from GitHub
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : filteredJobs.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      No jobs found matching your filters
+                      No jobs found matching your filters. Try adjusting your search or category filter.
                     </TableCell>
                   </TableRow>
                 ) : (

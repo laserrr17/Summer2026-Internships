@@ -84,11 +84,14 @@ export default function AppliedJobs() {
   const loadJobs = async () => {
     setLoading(true);
     try {
+      console.log('Loading jobs and user data...');
       const [jobsList, applied, notSuitable] = await Promise.all([
         fetchJobs(),
         getAppliedJobs(),
         getNotSuitableJobs()
       ]);
+      
+      console.log(`Loaded: ${jobsList.length} jobs, ${applied.size} applied, ${notSuitable.size} not suitable`);
       
       // Merge applied status and timestamp
       const jobsWithStatus = jobsList.map(job => ({
@@ -103,6 +106,8 @@ export default function AppliedJobs() {
       setNotSuitableJobs(notSuitable);
       // Reset to first page when data refreshes to prevent empty page view
       setCurrentPage(1);
+      
+      console.log(`Jobs loaded successfully. Total: ${jobsWithStatus.length}, Applied: ${applied.size}`);
     } catch (error) {
       console.error('Failed to load jobs:', error);
       alert('Failed to load job listings. Please try again later.');
@@ -119,11 +124,13 @@ export default function AppliedJobs() {
         alert(`Successfully synced ${result.count} jobs from GitHub!`);
         await loadJobs();
       } else {
-        alert('Failed to sync jobs. Please try again.');
+        const errorMsg = result.error || 'Failed to sync jobs. Please try again.';
+        console.error('Sync error:', errorMsg);
+        alert(errorMsg);
       }
     } catch (error) {
       console.error('Failed to sync jobs:', error);
-      alert('Failed to sync jobs. Please try again.');
+      alert('Failed to sync jobs. Please check console for details.');
     } finally {
       setLoading(false);
     }

@@ -83,6 +83,7 @@ export default function AuthForm({ onAuth }: AuthFormProps) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
+                autoComplete="email"
                 required
               />
             </div>
@@ -98,6 +99,7 @@ export default function AuthForm({ onAuth }: AuthFormProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
+                autoComplete={isSignUp ? "new-password" : "current-password"}
                 required
               />
             </div>
@@ -114,6 +116,7 @@ export default function AuthForm({ onAuth }: AuthFormProps) {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   disabled={loading}
+                  autoComplete="new-password"
                   required
                 />
               </div>

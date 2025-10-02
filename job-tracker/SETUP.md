@@ -32,9 +32,14 @@ This application now uses **Supabase** for database and authentication. Follow t
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 ```
 
-**Important:** Replace the values with YOUR actual Supabase URL and key!
+**Important:** 
+- Replace the values with YOUR actual Supabase URL and keys!
+- The **service role key** is required for the sync feature to work
+- Find all keys in: Supabase → Settings → API
+- ⚠️ Keep the service role key secret - never commit it to git!
 
 ## 5. Start the Application
 
