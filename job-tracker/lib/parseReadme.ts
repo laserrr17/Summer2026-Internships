@@ -7,6 +7,7 @@ export interface Job {
   age: string;
   category: string;
   applied?: boolean;
+  appliedAt?: string; // ISO timestamp when job was marked as applied
 }
 
 export function parseReadme(readmeContent: string): Job[] {

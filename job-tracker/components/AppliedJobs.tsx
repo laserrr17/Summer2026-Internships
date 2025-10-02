@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Job, fetchReadmeFromGitHub, parseReadme } from '@/lib/parseReadme';
-import { loadAppliedJobs, toggleJobApplied, exportAppliedJobs } from '@/lib/storage';
-import { isAuthenticated, login, logout, hasPassword } from '@/lib/auth';
-import LoginForm from '@/components/LoginForm';
+import { signOut, onAuthStateChange } from '@/lib/authService';
+import { getAppliedJobs, toggleJobApplication } from '@/lib/jobService';
+import { exportAppliedJobs } from '@/lib/storage';
+import AuthForm from '@/components/AuthForm';
+import { signIn, signUp } from '@/lib/authService';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -27,43 +29,71 @@ import {
 } from '@/components/ui/table';
 import { RefreshCw, Download, ExternalLink, LogOut, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import type { User } from '@supabase/supabase-js';
 
 const REPO_URL = 'https://github.com/SimplifyJobs/Summer2026-Internships';
 
+// Helper function to format date
+function formatAppliedDate(isoDate: string | undefined): string {
+  if (!isoDate) return 'N/A';
+  
+  const date = new Date(isoDate);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  
+  // Format as MM/DD/YYYY
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric', 
+    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined 
+  });
+}
+
 export default function AppliedJobs() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [isFirstTime, setIsFirstTime] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [appliedJobs, setAppliedJobs] = useState<Set<string>>(new Set());
+  const [appliedJobs, setAppliedJobs] = useState<Map<string, string>>(new Map()); // job_id -> applied_at
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
 
   useEffect(() => {
-    // Check authentication on mount
-    const isAuth = isAuthenticated();
-    const hasPass = hasPassword();
-    setAuthenticated(isAuth);
-    setIsFirstTime(!hasPass);
-    
-    if (isAuth) {
-      loadJobs();
-    } else {
-      setLoading(false);
-    }
+    // Listen to auth state changes
+    const subscription = onAuthStateChange((user) => {
+      setUser(user);
+      if (user) {
+        loadJobs();
+      } else {
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const loadJobs = async () => {
     setLoading(true);
     try {
-      const readme = await fetchReadmeFromGitHub();
-      const parsedJobs = parseReadme(readme);
-      const applied = loadAppliedJobs();
+      const [readme, applied] = await Promise.all([
+        fetchReadmeFromGitHub(),
+        getAppliedJobs()
+      ]);
       
-      // Merge applied status
+      const parsedJobs = parseReadme(readme);
+      
+      // Merge applied status and timestamp
       const jobsWithStatus = parsedJobs.map(job => ({
         ...job,
         applied: applied.has(job.id),
+        appliedAt: applied.get(job.id),
       }));
       
       setJobs(jobsWithStatus);
@@ -76,46 +106,75 @@ export default function AppliedJobs() {
     }
   };
 
-  const handleToggleApplied = (jobId: string) => {
-    const newAppliedJobs = toggleJobApplied(jobId);
+  const handleToggleApplied = async (job: Job) => {
+    const currentlyApplied = appliedJobs.has(job.id);
+    
+    // Optimistic update
+    const newAppliedJobs = new Map(appliedJobs);
+    if (currentlyApplied) {
+      newAppliedJobs.delete(job.id);
+    } else {
+      newAppliedJobs.set(job.id, new Date().toISOString());
+    }
+    
     setAppliedJobs(newAppliedJobs);
-    setJobs(jobs.map(job => 
-      job.id === jobId ? { ...job, applied: newAppliedJobs.has(jobId) } : job
+    setJobs(jobs.map(j => 
+      j.id === job.id ? { ...j, applied: !currentlyApplied, appliedAt: newAppliedJobs.get(job.id) } : j
     ));
+
+    // Persist to backend
+    const success = await toggleJobApplication(job, currentlyApplied);
+    
+    if (!success) {
+      // Revert on failure
+      setAppliedJobs(appliedJobs);
+      setJobs(jobs.map(j => 
+        j.id === job.id ? { ...j, applied: currentlyApplied, appliedAt: appliedJobs.get(job.id) } : j
+      ));
+      alert('Failed to update application status. Please try again.');
+    }
   };
 
   const handleExport = () => {
     exportAppliedJobs(jobs);
   };
 
-  const handleLogin = (password: string): boolean => {
-    const success = login(password);
-    if (success) {
-      setAuthenticated(true);
-      loadJobs();
+  const handleAuth = async (email: string, password: string, isSignUp: boolean) => {
+    if (isSignUp) {
+      return await signUp(email, password);
+    } else {
+      return await signIn(email, password);
     }
-    return success;
   };
 
-  const handleLogout = () => {
-    logout();
-    setAuthenticated(false);
+  const handleLogout = async () => {
+    await signOut();
+    setUser(null);
+    setJobs([]);
+    setAppliedJobs(new Map());
   };
 
   const filteredJobs = useMemo(() => {
-    return jobs.filter(job => {
-      // Only show applied jobs
-      if (!job.applied) return false;
-      
-      const matchesSearch = 
-        job.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        job.location.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      const matchesCategory = categoryFilter === 'all' || job.category === categoryFilter;
-      
-      return matchesSearch && matchesCategory;
-    });
+    return jobs
+      .filter(job => {
+        // Only show applied jobs
+        if (!job.applied) return false;
+        
+        const matchesSearch = 
+          job.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          job.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          job.location.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        const matchesCategory = categoryFilter === 'all' || job.category === categoryFilter;
+        
+        return matchesSearch && matchesCategory;
+      })
+      .sort((a, b) => {
+        // Sort by applied date (most recent first)
+        if (!a.appliedAt) return 1;
+        if (!b.appliedAt) return -1;
+        return new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime();
+      });
   }, [jobs, searchTerm, categoryFilter]);
 
   const categories = useMemo(() => {
@@ -132,8 +191,8 @@ export default function AppliedJobs() {
     };
   }, [jobs]);
 
-  if (!authenticated) {
-    return <LoginForm onLogin={handleLogin} isFirstTime={isFirstTime} />;
+  if (!user) {
+    return <AuthForm onAuth={handleAuth} />;
   }
 
   if (loading) {
@@ -158,6 +217,9 @@ export default function AppliedJobs() {
               SimplifyJobs/Summer2026-Internships
               <ExternalLink className="w-3 h-3" />
             </a>
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Logged in as: {user.email}
           </p>
         </div>
         <div className="flex gap-2">
@@ -248,13 +310,14 @@ export default function AppliedJobs() {
                   <TableHead className="w-[250px]">Role</TableHead>
                   <TableHead className="w-[180px]">Location</TableHead>
                   <TableHead className="w-[120px]">Category</TableHead>
+                  <TableHead className="w-[120px]">Applied Date</TableHead>
                   <TableHead className="w-[80px]">Age</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredJobs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No applied jobs found. Start applying from the main page!
                     </TableCell>
                   </TableRow>
@@ -276,7 +339,7 @@ export default function AppliedJobs() {
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={job.applied}
-                          onCheckedChange={() => handleToggleApplied(job.id)}
+                          onCheckedChange={() => handleToggleApplied(job)}
                         />
                       </TableCell>
                       <TableCell className="font-medium">{job.company}</TableCell>
@@ -286,6 +349,9 @@ export default function AppliedJobs() {
                         <Badge variant="outline" className="whitespace-nowrap">
                           {job.category}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {formatAppliedDate(job.appliedAt)}
                       </TableCell>
                       <TableCell>{job.age}</TableCell>
                     </TableRow>
@@ -303,4 +369,3 @@ export default function AppliedJobs() {
     </div>
   );
 }
-

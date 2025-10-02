@@ -1,0 +1,174 @@
+import { supabase } from './supabase';
+import type { Job } from './parseReadme';
+
+export interface AppliedJob {
+  id: number;
+  user_id: string;
+  job_id: string;
+  company: string;
+  role: string;
+  location: string;
+  category: string;
+  age: string;
+  application_url: string | null;
+  applied_at: string;
+  notes: string | null;
+}
+
+/**
+ * Get all applied jobs for the current user
+ * Returns a Map of job_id -> applied_at timestamp
+ */
+export async function getAppliedJobs(): Promise<Map<string, string>> {
+  try {
+    const { data, error } = await supabase
+      .from('applied_jobs')
+      .select('job_id, applied_at');
+
+    if (error) {
+      console.error('Failed to fetch applied jobs:', error);
+      return new Map();
+    }
+
+    return new Map(data?.map(job => [job.job_id, job.applied_at]) || []);
+  } catch (error) {
+    console.error('Failed to fetch applied jobs:', error);
+    return new Map();
+  }
+}
+
+/**
+ * Get detailed applied jobs for the current user
+ */
+export async function getAppliedJobsDetailed(): Promise<AppliedJob[]> {
+  try {
+    const { data, error } = await supabase
+      .from('applied_jobs')
+      .select('*')
+      .order('applied_at', { ascending: false });
+
+    if (error) {
+      console.error('Failed to fetch applied jobs:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Failed to fetch applied jobs:', error);
+    return [];
+  }
+}
+
+/**
+ * Mark a job as applied
+ */
+export async function markJobAsApplied(job: Job): Promise<boolean> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      console.error('User not authenticated');
+      return false;
+    }
+
+    const { error } = await supabase
+      .from('applied_jobs')
+      .insert({
+        user_id: user.id,
+        job_id: job.id,
+        company: job.company,
+        role: job.role,
+        location: job.location,
+        category: job.category,
+        age: job.age,
+        application_url: job.applicationUrl || null,
+      });
+
+    if (error) {
+      // If it's a duplicate, that's okay
+      if (error.code === '23505') {
+        console.log('Job already marked as applied');
+        return true;
+      }
+      console.error('Failed to mark job as applied:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Failed to mark job as applied:', error);
+    return false;
+  }
+}
+
+/**
+ * Unmark a job as applied
+ */
+export async function unmarkJobAsApplied(jobId: string): Promise<boolean> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      console.error('User not authenticated');
+      return false;
+    }
+
+    const { error } = await supabase
+      .from('applied_jobs')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('job_id', jobId);
+
+    if (error) {
+      console.error('Failed to unmark job:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Failed to unmark job:', error);
+    return false;
+  }
+}
+
+/**
+ * Toggle job application status
+ */
+export async function toggleJobApplication(job: Job, currentlyApplied: boolean): Promise<boolean> {
+  if (currentlyApplied) {
+    return await unmarkJobAsApplied(job.id);
+  } else {
+    return await markJobAsApplied(job);
+  }
+}
+
+/**
+ * Update notes for an applied job
+ */
+export async function updateJobNotes(jobId: string, notes: string): Promise<boolean> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      console.error('User not authenticated');
+      return false;
+    }
+
+    const { error } = await supabase
+      .from('applied_jobs')
+      .update({ notes })
+      .eq('user_id', user.id)
+      .eq('job_id', jobId);
+
+    if (error) {
+      console.error('Failed to update notes:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Failed to update notes:', error);
+    return false;
+  }
+}
+

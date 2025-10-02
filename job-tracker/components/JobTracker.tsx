@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Job, fetchReadmeFromGitHub, parseReadme } from '@/lib/parseReadme';
-import { loadAppliedJobs, toggleJobApplied, exportAppliedJobs } from '@/lib/storage';
-import { isAuthenticated, login, logout, hasPassword } from '@/lib/auth';
-import LoginForm from '@/components/LoginForm';
+import { signIn, signUp, signOut, onAuthStateChange } from '@/lib/authService';
+import { getAppliedJobs, toggleJobApplication } from '@/lib/jobService';
+import { exportAppliedJobs } from '@/lib/storage';
+import AuthForm from '@/components/AuthForm';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -27,44 +28,49 @@ import {
 } from '@/components/ui/table';
 import { RefreshCw, Download, ExternalLink, LogOut, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
+import type { User } from '@supabase/supabase-js';
 
 const REPO_URL = 'https://github.com/SimplifyJobs/Summer2026-Internships';
 
 export default function JobTracker() {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [isFirstTime, setIsFirstTime] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [appliedJobs, setAppliedJobs] = useState<Set<string>>(new Set());
+  const [appliedJobs, setAppliedJobs] = useState<Map<string, string>>(new Map()); // job_id -> applied_at
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
-    // Check authentication on mount
-    const isAuth = isAuthenticated();
-    const hasPass = hasPassword();
-    setAuthenticated(isAuth);
-    setIsFirstTime(!hasPass);
-    
-    if (isAuth) {
-      loadJobs();
-    } else {
-      setLoading(false);
-    }
+    // Listen to auth state changes
+    const subscription = onAuthStateChange((user) => {
+      setUser(user);
+      if (user) {
+        loadJobs();
+      } else {
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const loadJobs = async () => {
     setLoading(true);
     try {
-      const readme = await fetchReadmeFromGitHub();
-      const parsedJobs = parseReadme(readme);
-      const applied = loadAppliedJobs();
+      const [readme, applied] = await Promise.all([
+        fetchReadmeFromGitHub(),
+        getAppliedJobs()
+      ]);
       
-      // Merge applied status
+      const parsedJobs = parseReadme(readme);
+      
+      // Merge applied status and timestamp
       const jobsWithStatus = parsedJobs.map(job => ({
         ...job,
         applied: applied.has(job.id),
+        appliedAt: applied.get(job.id),
       }));
       
       setJobs(jobsWithStatus);
@@ -77,30 +83,52 @@ export default function JobTracker() {
     }
   };
 
-  const handleToggleApplied = (jobId: string) => {
-    const newAppliedJobs = toggleJobApplied(jobId);
+  const handleToggleApplied = async (job: Job) => {
+    const currentlyApplied = appliedJobs.has(job.id);
+    
+    // Optimistic update
+    const newAppliedJobs = new Map(appliedJobs);
+    if (currentlyApplied) {
+      newAppliedJobs.delete(job.id);
+    } else {
+      newAppliedJobs.set(job.id, new Date().toISOString());
+    }
+    
     setAppliedJobs(newAppliedJobs);
-    setJobs(jobs.map(job => 
-      job.id === jobId ? { ...job, applied: newAppliedJobs.has(jobId) } : job
+    setJobs(jobs.map(j => 
+      j.id === job.id ? { ...j, applied: !currentlyApplied, appliedAt: newAppliedJobs.get(job.id) } : j
     ));
+
+    // Persist to backend
+    const success = await toggleJobApplication(job, currentlyApplied);
+    
+    if (!success) {
+      // Revert on failure
+      setAppliedJobs(appliedJobs);
+      setJobs(jobs.map(j => 
+        j.id === job.id ? { ...j, applied: currentlyApplied, appliedAt: appliedJobs.get(job.id) } : j
+      ));
+      alert('Failed to update application status. Please try again.');
+    }
   };
 
   const handleExport = () => {
     exportAppliedJobs(jobs);
   };
 
-  const handleLogin = (password: string): boolean => {
-    const success = login(password);
-    if (success) {
-      setAuthenticated(true);
-      loadJobs();
+  const handleAuth = async (email: string, password: string, isSignUp: boolean) => {
+    if (isSignUp) {
+      return await signUp(email, password);
+    } else {
+      return await signIn(email, password);
     }
-    return success;
   };
 
-  const handleLogout = () => {
-    logout();
-    setAuthenticated(false);
+  const handleLogout = async () => {
+    await signOut();
+    setUser(null);
+    setJobs([]);
+    setAppliedJobs(new Map());
   };
 
   const filteredJobs = useMemo(() => {
@@ -115,14 +143,9 @@ export default function JobTracker() {
       
       const matchesCategory = categoryFilter === 'all' || job.category === categoryFilter;
       
-      const matchesStatus = 
-        statusFilter === 'all' ||
-        (statusFilter === 'applied' && job.applied) ||
-        (statusFilter === 'not-applied' && !job.applied);
-      
-      return matchesSearch && matchesCategory && matchesStatus;
+      return matchesSearch && matchesCategory;
     });
-  }, [jobs, searchTerm, categoryFilter, statusFilter]);
+  }, [jobs, searchTerm, categoryFilter]);
 
   const categories = useMemo(() => {
     const cats = new Set(jobs.map(job => job.category));
@@ -138,8 +161,8 @@ export default function JobTracker() {
     };
   }, [jobs]);
 
-  if (!authenticated) {
-    return <LoginForm onLogin={handleLogin} isFirstTime={isFirstTime} />;
+  if (!user) {
+    return <AuthForm onAuth={handleAuth} />;
   }
 
   if (loading) {
@@ -164,6 +187,9 @@ export default function JobTracker() {
               SimplifyJobs/Summer2026-Internships
               <ExternalLink className="w-3 h-3" />
             </a>
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Logged in as: {user.email}
           </p>
         </div>
         <div className="flex gap-2">
@@ -282,7 +308,7 @@ export default function JobTracker() {
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={job.applied}
-                          onCheckedChange={() => handleToggleApplied(job.id)}
+                          onCheckedChange={() => handleToggleApplied(job)}
                         />
                       </TableCell>
                       <TableCell className="font-medium">{job.company}</TableCell>
@@ -309,4 +335,3 @@ export default function JobTracker() {
     </div>
   );
 }
-

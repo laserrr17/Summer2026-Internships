@@ -4,13 +4,17 @@ A beautiful, modern web application to track your job applications from the [Sim
 
 ## Features
 
-- 🔐 **Password Protection**: Secure your application data with password authentication
+- 🔐 **User Authentication**: Secure email + password login with Supabase Auth
+- 👤 **Multi-User Support**: Each user has their own private account and data
+- 💾 **Database Storage**: Your data is saved in a real PostgreSQL database (no more lost data!)
+- 🌍 **Cross-Device Sync**: Access your applications from any device
+- 📅 **Application Tracking**: Track when you applied to each job with timestamps
 - 📊 **Live Data**: Automatically fetches the latest job listings from the SimplifyJobs GitHub repository
 - 🔄 **Auto-Updates**: Jobs refresh automatically - see new postings as they're added!
-- ✅ **Application Tracking**: Check off jobs as you apply with persistent local storage
+- ✅ **Smart Sorting**: Most recent applications appear first in your applied jobs list
 - 🔍 **Advanced Filtering**: Search by company, role, location, category, and application status
 - 📈 **Statistics Dashboard**: See total jobs, applied count, and remaining opportunities at a glance
-- 💾 **Export Functionality**: Download your applied jobs list as JSON
+- 💾 **Export Functionality**: Download your applied jobs list with dates as JSON
 - 🔗 **Direct Application Links**: Click to apply directly from the table
 - 🎨 **Beautiful UI**: Built with shadcn/ui components and Tailwind CSS
 - ⚡ **Fast & Responsive**: Next.js with optimized performance
@@ -34,17 +38,39 @@ cd job-tracker
 npm install
 ```
 
-3. Run the development server:
+3. **Set up Supabase backend** (required for authentication and data storage):
+   - See [SETUP.md](SETUP.md) for detailed instructions
+   - Quick steps:
+     1. Create a free Supabase account at [supabase.com](https://supabase.com)
+     2. Run the SQL migration from `lib/database.sql`
+     3. Copy `env-template.txt` to `.env.local` and add your Supabase credentials
+
+4. Run the development server:
 ```bash
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
+5. Open [http://localhost:3000](http://localhost:3000) in your browser
+
+## Deployment
+
+### Deploying to Vercel
+
+1. Push your code to GitHub
+2. Import your repository to [Vercel](https://vercel.com)
+3. Set root directory to `job-tracker`
+4. Add environment variables in Vercel's dashboard:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+5. Redeploy
+
+📖 **Detailed Guide**: [VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md)
 
 ## Usage
 
-1. **First Time Setup**: Set a password to protect your application data (minimum 4 characters)
-2. **Login**: Enter your password to access the job tracker
+1. **First Time**: Click "Sign Up" and create an account with your email and password (minimum 6 characters)
+2. **Returning Users**: Sign in with your email and password
+3. **Your Data**: Each user's applied jobs are private and securely stored
 3. **Browse Jobs**: The app automatically loads all job listings from the SimplifyJobs repository
 4. **Filter Jobs**: Use the search bar and dropdown filters to find specific opportunities
 5. **Track Applications**: Click the checkbox next to any job to mark it as applied
