@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Job, fetchReadmeFromGitHub, parseReadme } from '@/lib/parseReadme';
 import { signIn, signUp, signOut, onAuthStateChange } from '@/lib/authService';
-import { getAppliedJobs, toggleJobApplication } from '@/lib/jobService';
+import { getAppliedJobs, toggleJobApplication, getNotSuitableJobs, toggleJobNotSuitable } from '@/lib/jobService';
 import { exportAppliedJobs } from '@/lib/storage';
 import AuthForm from '@/components/AuthForm';
 import { Input } from '@/components/ui/input';
@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { RefreshCw, Download, ExternalLink, LogOut, CheckCircle2 } from 'lucide-react';
+import { RefreshCw, Download, ExternalLink, LogOut, CheckCircle2, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import type { User } from '@supabase/supabase-js';
 
@@ -36,6 +36,8 @@ export default function JobTracker() {
   const [user, setUser] = useState<User | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [appliedJobs, setAppliedJobs] = useState<Map<string, string>>(new Map()); // job_id -> applied_at
+  const [notSuitableJobs, setNotSuitableJobs] = useState<Set<string>>(new Set());
+  const [showNotSuitable, setShowNotSuitable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -61,9 +63,10 @@ export default function JobTracker() {
   const loadJobs = async () => {
     setLoading(true);
     try {
-      const [readme, applied] = await Promise.all([
+      const [readme, applied, notSuitable] = await Promise.all([
         fetchReadmeFromGitHub(),
-        getAppliedJobs()
+        getAppliedJobs(),
+        getNotSuitableJobs()
       ]);
       
       const parsedJobs = parseReadme(readme);
@@ -73,10 +76,12 @@ export default function JobTracker() {
         ...job,
         applied: applied.has(job.id),
         appliedAt: applied.get(job.id),
+        notSuitable: notSuitable.has(job.id),
       }));
       
       setJobs(jobsWithStatus);
       setAppliedJobs(applied);
+      setNotSuitableJobs(notSuitable);
     } catch (error) {
       console.error('Failed to load jobs:', error);
       alert('Failed to load job listings. Please try again later.');
@@ -114,6 +119,35 @@ export default function JobTracker() {
     }
   };
 
+  const handleToggleNotSuitable = async (job: Job) => {
+    const currentlyNotSuitable = notSuitableJobs.has(job.id);
+    
+    // Optimistic update
+    const newNotSuitableJobs = new Set(notSuitableJobs);
+    if (currentlyNotSuitable) {
+      newNotSuitableJobs.delete(job.id);
+    } else {
+      newNotSuitableJobs.add(job.id);
+    }
+    
+    setNotSuitableJobs(newNotSuitableJobs);
+    setJobs(jobs.map(j => 
+      j.id === job.id ? { ...j, notSuitable: !currentlyNotSuitable } : j
+    ));
+
+    // Persist to backend
+    const success = await toggleJobNotSuitable(job, currentlyNotSuitable);
+    
+    if (!success) {
+      // Revert on failure
+      setNotSuitableJobs(notSuitableJobs);
+      setJobs(jobs.map(j => 
+        j.id === job.id ? { ...j, notSuitable: currentlyNotSuitable } : j
+      ));
+      alert('Failed to update not suitable status. Please try again.');
+    }
+  };
+
   const handleExport = () => {
     exportAppliedJobs(jobs);
   };
@@ -131,12 +165,16 @@ export default function JobTracker() {
     setUser(null);
     setJobs([]);
     setAppliedJobs(new Map());
+    setNotSuitableJobs(new Set());
   };
 
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
       // Hide applied jobs from main list
       if (job.applied) return false;
+      
+      // Show/hide not suitable jobs based on toggle
+      if (!showNotSuitable && job.notSuitable) return false;
       
       const matchesSearch = 
         job.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -147,7 +185,7 @@ export default function JobTracker() {
       
       return matchesSearch && matchesCategory;
     });
-  }, [jobs, searchTerm, categoryFilter]);
+  }, [jobs, searchTerm, categoryFilter, showNotSuitable]);
 
   // Paginated jobs
   const paginatedJobs = useMemo(() => {
@@ -161,7 +199,7 @@ export default function JobTracker() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, categoryFilter]);
+  }, [searchTerm, categoryFilter, showNotSuitable]);
 
   const categories = useMemo(() => {
     const cats = new Set(jobs.map(job => job.category));
@@ -170,10 +208,12 @@ export default function JobTracker() {
 
   const stats = useMemo(() => {
     const applied = jobs.filter(j => j.applied).length;
+    const notSuitable = jobs.filter(j => j.notSuitable).length;
     return {
       total: jobs.length,
       applied,
-      remaining: jobs.length - applied,
+      notSuitable,
+      remaining: jobs.length - applied - notSuitable,
     };
   }, [jobs]);
 
@@ -222,7 +262,7 @@ export default function JobTracker() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Jobs</CardTitle>
@@ -241,7 +281,15 @@ export default function JobTracker() {
         </Card>
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Not Applied</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Not Suitable</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">{stats.notSuitable}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Remaining</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">{stats.remaining}</div>
@@ -255,31 +303,46 @@ export default function JobTracker() {
           <CardDescription>Search and filter job listings</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col md:flex-row gap-4">
-            <Input
-              placeholder="Search company, role, or location..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1"
-            />
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-full md:w-[250px]">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map(cat => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex gap-2">
-              <Button onClick={loadJobs} variant="outline" size="icon">
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-              <Button onClick={handleExport} variant="outline" size="icon">
-                <Download className="w-4 h-4" />
-              </Button>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row gap-4">
+              <Input
+                placeholder="Search company, role, or location..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="flex-1"
+              />
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-full md:w-[250px]">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map(cat => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex gap-2">
+                <Button onClick={loadJobs} variant="outline" size="icon">
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
+                <Button onClick={handleExport} variant="outline" size="icon">
+                  <Download className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="show-not-suitable"
+                checked={showNotSuitable}
+                onCheckedChange={(checked) => setShowNotSuitable(checked as boolean)}
+              />
+              <label 
+                htmlFor="show-not-suitable" 
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                Show jobs marked as not suitable ({stats.notSuitable})
+              </label>
             </div>
           </div>
         </CardContent>
@@ -292,6 +355,7 @@ export default function JobTracker() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[80px]">Applied</TableHead>
+                  <TableHead className="w-[100px]">Not Suitable</TableHead>
                   <TableHead className="w-[200px]">Company</TableHead>
                   <TableHead className="w-[250px]">Role</TableHead>
                   <TableHead className="w-[180px]">Location</TableHead>
@@ -302,7 +366,7 @@ export default function JobTracker() {
               <TableBody>
                 {filteredJobs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No jobs found matching your filters
                     </TableCell>
                   </TableRow>
@@ -310,10 +374,11 @@ export default function JobTracker() {
                   paginatedJobs.map((job) => (
                     <TableRow 
                       key={job.id} 
-                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      className={`cursor-pointer hover:bg-muted/50 transition-colors ${job.notSuitable ? 'opacity-50' : ''}`}
                       onClick={(e) => {
-                        // Don't navigate if clicking on checkbox
-                        if ((e.target as HTMLElement).closest('[role="checkbox"]')) {
+                        // Don't navigate if clicking on checkbox or button
+                        if ((e.target as HTMLElement).closest('[role="checkbox"]') || 
+                            (e.target as HTMLElement).closest('button')) {
                           return;
                         }
                         if (job.applicationUrl) {
@@ -326,6 +391,16 @@ export default function JobTracker() {
                           checked={job.applied}
                           onCheckedChange={() => handleToggleApplied(job)}
                         />
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant={job.notSuitable ? "destructive" : "ghost"}
+                          size="sm"
+                          onClick={() => handleToggleNotSuitable(job)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </Button>
                       </TableCell>
                       <TableCell className="font-medium">{job.company}</TableCell>
                       <TableCell>{job.role}</TableCell>

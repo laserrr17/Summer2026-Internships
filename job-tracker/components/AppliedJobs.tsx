@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Job, fetchReadmeFromGitHub, parseReadme } from '@/lib/parseReadme';
 import { signOut, onAuthStateChange } from '@/lib/authService';
-import { getAppliedJobs, toggleJobApplication } from '@/lib/jobService';
+import { getAppliedJobs, toggleJobApplication, getNotSuitableJobs, toggleJobNotSuitable } from '@/lib/jobService';
 import { exportAppliedJobs } from '@/lib/storage';
 import AuthForm from '@/components/AuthForm';
 import { signIn, signUp } from '@/lib/authService';
@@ -27,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { RefreshCw, Download, ExternalLink, LogOut, ArrowLeft } from 'lucide-react';
+import { RefreshCw, Download, ExternalLink, LogOut, ArrowLeft, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import type { User } from '@supabase/supabase-js';
 
@@ -59,6 +59,7 @@ export default function AppliedJobs() {
   const [user, setUser] = useState<User | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [appliedJobs, setAppliedJobs] = useState<Map<string, string>>(new Map()); // job_id -> applied_at
+  const [notSuitableJobs, setNotSuitableJobs] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -84,9 +85,10 @@ export default function AppliedJobs() {
   const loadJobs = async () => {
     setLoading(true);
     try {
-      const [readme, applied] = await Promise.all([
+      const [readme, applied, notSuitable] = await Promise.all([
         fetchReadmeFromGitHub(),
-        getAppliedJobs()
+        getAppliedJobs(),
+        getNotSuitableJobs()
       ]);
       
       const parsedJobs = parseReadme(readme);
@@ -96,10 +98,12 @@ export default function AppliedJobs() {
         ...job,
         applied: applied.has(job.id),
         appliedAt: applied.get(job.id),
+        notSuitable: notSuitable.has(job.id),
       }));
       
       setJobs(jobsWithStatus);
       setAppliedJobs(applied);
+      setNotSuitableJobs(notSuitable);
     } catch (error) {
       console.error('Failed to load jobs:', error);
       alert('Failed to load job listings. Please try again later.');
@@ -137,6 +141,35 @@ export default function AppliedJobs() {
     }
   };
 
+  const handleToggleNotSuitable = async (job: Job) => {
+    const currentlyNotSuitable = notSuitableJobs.has(job.id);
+    
+    // Optimistic update
+    const newNotSuitableJobs = new Set(notSuitableJobs);
+    if (currentlyNotSuitable) {
+      newNotSuitableJobs.delete(job.id);
+    } else {
+      newNotSuitableJobs.add(job.id);
+    }
+    
+    setNotSuitableJobs(newNotSuitableJobs);
+    setJobs(jobs.map(j => 
+      j.id === job.id ? { ...j, notSuitable: !currentlyNotSuitable } : j
+    ));
+
+    // Persist to backend
+    const success = await toggleJobNotSuitable(job, currentlyNotSuitable);
+    
+    if (!success) {
+      // Revert on failure
+      setNotSuitableJobs(notSuitableJobs);
+      setJobs(jobs.map(j => 
+        j.id === job.id ? { ...j, notSuitable: currentlyNotSuitable } : j
+      ));
+      alert('Failed to update not suitable status. Please try again.');
+    }
+  };
+
   const handleExport = () => {
     exportAppliedJobs(jobs);
   };
@@ -154,6 +187,7 @@ export default function AppliedJobs() {
     setUser(null);
     setJobs([]);
     setAppliedJobs(new Map());
+    setNotSuitableJobs(new Set());
   };
 
   const filteredJobs = useMemo(() => {
@@ -322,6 +356,7 @@ export default function AppliedJobs() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[80px]">Remove</TableHead>
+                  <TableHead className="w-[100px]">Not Suitable</TableHead>
                   <TableHead className="w-[200px]">Company</TableHead>
                   <TableHead className="w-[250px]">Role</TableHead>
                   <TableHead className="w-[180px]">Location</TableHead>
@@ -333,7 +368,7 @@ export default function AppliedJobs() {
               <TableBody>
                 {filteredJobs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No applied jobs found. Start applying from the main page!
                     </TableCell>
                   </TableRow>
@@ -341,10 +376,11 @@ export default function AppliedJobs() {
                   paginatedJobs.map((job) => (
                     <TableRow 
                       key={job.id}
-                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      className={`cursor-pointer hover:bg-muted/50 transition-colors ${job.notSuitable ? 'opacity-50' : ''}`}
                       onClick={(e) => {
-                        // Don't navigate if clicking on checkbox
-                        if ((e.target as HTMLElement).closest('[role="checkbox"]')) {
+                        // Don't navigate if clicking on checkbox or button
+                        if ((e.target as HTMLElement).closest('[role="checkbox"]') || 
+                            (e.target as HTMLElement).closest('button')) {
                           return;
                         }
                         if (job.applicationUrl) {
@@ -357,6 +393,16 @@ export default function AppliedJobs() {
                           checked={job.applied}
                           onCheckedChange={() => handleToggleApplied(job)}
                         />
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant={job.notSuitable ? "destructive" : "ghost"}
+                          size="sm"
+                          onClick={() => handleToggleNotSuitable(job)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </Button>
                       </TableCell>
                       <TableCell className="font-medium">{job.company}</TableCell>
                       <TableCell>{job.role}</TableCell>

@@ -8,6 +8,7 @@ export interface Job {
   category: string;
   applied?: boolean;
   appliedAt?: string; // ISO timestamp when job was marked as applied
+  notSuitable?: boolean; // Whether job is marked as not suitable
 }
 
 export function parseReadme(readmeContent: string): Job[] {
