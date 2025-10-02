@@ -128,12 +128,22 @@ CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);
 -- Enable Row Level Security (RLS)
 ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies: All authenticated users can read jobs
+-- RLS Policies: All authenticated users can read active jobs
 CREATE POLICY "Authenticated users can view active jobs"
   ON jobs
   FOR SELECT
   USING (auth.role() = 'authenticated' AND is_active = true);
 
+-- RLS Policy: Allow service role to manage all jobs (for API sync)
+-- Note: This policy allows the service role key to INSERT/UPDATE/DELETE jobs
+CREATE POLICY "Service role can manage all jobs"
+  ON jobs
+  FOR ALL
+  USING (auth.role() = 'service_role');
+
 -- Grant read access to authenticated users
 GRANT SELECT ON jobs TO authenticated;
+
+-- Grant full access to service role (for API sync operations)
+GRANT ALL ON jobs TO service_role;
 
