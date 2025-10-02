@@ -14,6 +14,23 @@ function getSupabaseClient() {
 // GET /api/jobs - Fetch all active jobs from database
 export async function GET() {
   try {
+    // Validate environment variables
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      console.error('Missing NEXT_PUBLIC_SUPABASE_URL');
+      return NextResponse.json(
+        { error: 'Server configuration error: Missing database URL' },
+        { status: 500 }
+      );
+    }
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.error('Missing SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_ANON_KEY');
+      return NextResponse.json(
+        { error: 'Server configuration error: Missing database credentials' },
+        { status: 500 }
+      );
+    }
+
     const supabase = getSupabaseClient();
     
     const { data: jobs, error } = await supabase
@@ -25,7 +42,7 @@ export async function GET() {
     if (error) {
       console.error('Error fetching jobs from database:', error);
       return NextResponse.json(
-        { error: 'Failed to fetch jobs from database' },
+        { error: `Failed to fetch jobs from database: ${error.message}` },
         { status: 500 }
       );
     }
@@ -35,9 +52,10 @@ export async function GET() {
       count: jobs?.length || 0
     });
   } catch (error) {
-    console.error('Error fetching jobs:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Error fetching jobs:', errorMessage);
     return NextResponse.json(
-      { error: 'Failed to fetch jobs' },
+      { error: `Failed to fetch jobs: ${errorMessage}` },
       { status: 500 }
     );
   }
@@ -46,7 +64,25 @@ export async function GET() {
 // POST /api/jobs - Sync jobs from GitHub to database
 export async function POST() {
   try {
+    // Validate environment variables
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      console.error('Missing NEXT_PUBLIC_SUPABASE_URL');
+      return NextResponse.json(
+        { error: 'Server configuration error: Missing database URL' },
+        { status: 500 }
+      );
+    }
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.error('Missing SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_ANON_KEY');
+      return NextResponse.json(
+        { error: 'Server configuration error: Missing database credentials' },
+        { status: 500 }
+      );
+    }
+
     // Fetch README from GitHub
+    console.log('Fetching README from GitHub...');
     const response = await fetch(REPO_URL, {
       headers: {
         'Accept': 'text/plain',
@@ -54,20 +90,45 @@ export async function POST() {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch README: ${response.status}`);
+      const errorMsg = `Failed to fetch README: ${response.status} ${response.statusText}`;
+      console.error(errorMsg);
+      return NextResponse.json(
+        { error: errorMsg },
+        { status: 502 }
+      );
     }
 
     const readme = await response.text();
+    console.log(`Fetched README (${readme.length} bytes)`);
+    
     const jobs = parseReadme(readme);
+    console.log(`Parsed ${jobs.length} jobs from README`);
+
+    if (jobs.length === 0) {
+      console.warn('No jobs parsed from README');
+      return NextResponse.json(
+        { error: 'No jobs found in README', warning: true },
+        { status: 200 }
+      );
+    }
 
     // Store jobs in database
     const supabase = getSupabaseClient();
 
     // Mark all existing jobs as inactive first
-    await supabase
+    console.log('Marking existing jobs as inactive...');
+    const { error: updateError } = await supabase
       .from('jobs')
       .update({ is_active: false })
       .eq('is_active', true);
+
+    if (updateError) {
+      console.error('Error marking jobs as inactive:', updateError);
+      return NextResponse.json(
+        { error: `Database error: ${updateError.message}` },
+        { status: 500 }
+      );
+    }
 
     // Insert or update jobs
     const jobsToUpsert = jobs.map(job => ({
@@ -82,6 +143,7 @@ export async function POST() {
       updated_at: new Date().toISOString()
     }));
 
+    console.log(`Upserting ${jobsToUpsert.length} jobs...`);
     const { error: upsertError } = await supabase
       .from('jobs')
       .upsert(jobsToUpsert, { 
@@ -92,20 +154,23 @@ export async function POST() {
     if (upsertError) {
       console.error('Error upserting jobs:', upsertError);
       return NextResponse.json(
-        { error: 'Failed to sync jobs to database' },
+        { error: `Failed to sync jobs to database: ${upsertError.message}` },
         { status: 500 }
       );
     }
 
+    console.log(`Successfully synced ${jobs.length} jobs`);
     return NextResponse.json({ 
       success: true,
       count: jobs.length,
       message: `Successfully synced ${jobs.length} jobs`
     });
   } catch (error) {
-    console.error('Error syncing jobs:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : '';
+    console.error('Error syncing jobs:', errorMessage, errorStack);
     return NextResponse.json(
-      { error: 'Failed to sync jobs' },
+      { error: `Failed to sync jobs: ${errorMessage}` },
       { status: 500 }
     );
   }
