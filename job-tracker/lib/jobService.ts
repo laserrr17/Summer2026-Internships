@@ -19,38 +19,33 @@ export interface AppliedJob {
  * Fetch all jobs from the backend API
  */
 export async function fetchJobs(): Promise<Job[]> {
-  try {
-    console.log('Fetching jobs from /api/jobs...');
-    const response = await fetch('/api/jobs');
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Failed to fetch jobs:', response.status, errorData);
-      throw new Error(`Failed to fetch jobs: ${response.status} - ${errorData.error || 'Unknown error'}`);
-    }
-    
-    const data = await response.json();
-    console.log(`Fetched ${data.count || 0} jobs from database:`, data);
-    
-    // Transform database jobs to Job format
-    const jobs = (data.jobs || []).map((job: any) => ({
-      id: job.id,
-      company: job.company,
-      role: job.role,
-      location: job.location,
-      category: job.category,
-      age: job.age,
-      applicationUrl: job.application_url,
-      applied: false,
-      notSuitable: false
-    }));
-    
-    console.log(`Transformed ${jobs.length} jobs for display`);
-    return jobs;
-  } catch (error) {
-    console.error('Failed to fetch jobs:', error);
-    return [];
+  console.log('Fetching jobs from /api/jobs...');
+  const response = await fetch('/api/jobs');
+  
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    console.error('Failed to fetch jobs:', response.status, errorData);
+    throw new Error(`Failed to fetch jobs: ${response.status} - ${errorData.error || 'Unknown error'}`);
   }
+  
+  const data = await response.json();
+  console.log(`Fetched ${data.count || 0} jobs from database:`, data);
+  
+  // Transform database jobs to Job format
+  const jobs = (data.jobs || []).map((job: any) => ({
+    id: job.id,
+    company: job.company,
+    role: job.role,
+    location: job.location,
+    category: job.category,
+    age: job.age,
+    applicationUrl: job.application_url,
+    applied: false,
+    notSuitable: false
+  }));
+  
+  console.log(`Transformed ${jobs.length} jobs for display`);
+  return jobs;
 }
 
 /**
@@ -102,25 +97,41 @@ export async function getAppliedJobs(): Promise<Map<string, string>> {
 }
 
 /**
+ * Get count of applied jobs for the current user
+ */
+export async function getAppliedJobsCount(): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from('applied_jobs')
+      .select('*', { count: 'exact', head: true });
+
+    if (error) {
+      console.error('Failed to fetch applied jobs count:', error);
+      return 0;
+    }
+
+    return count || 0;
+  } catch (error) {
+    console.error('Failed to fetch applied jobs count:', error);
+    return 0;
+  }
+}
+
+/**
  * Get detailed applied jobs for the current user
  */
 export async function getAppliedJobsDetailed(): Promise<AppliedJob[]> {
-  try {
-    const { data, error } = await supabase
-      .from('applied_jobs')
-      .select('*')
-      .order('applied_at', { ascending: false });
+  const { data, error } = await supabase
+    .from('applied_jobs')
+    .select('*')
+    .order('applied_at', { ascending: false });
 
-    if (error) {
-      console.error('Failed to fetch applied jobs:', error);
-      return [];
-    }
-
-    return data || [];
-  } catch (error) {
+  if (error) {
     console.error('Failed to fetch applied jobs:', error);
-    return [];
+    throw new Error(`Failed to fetch applied jobs: ${error.message}`);
   }
+
+  return data || [];
 }
 
 /**
@@ -255,6 +266,27 @@ export async function getNotSuitableJobs(): Promise<Set<string>> {
   } catch (error) {
     console.error('Failed to fetch not suitable jobs:', error);
     return new Set();
+  }
+}
+
+/**
+ * Get count of not suitable jobs for the current user
+ */
+export async function getNotSuitableJobsCount(): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from('not_suitable_jobs')
+      .select('*', { count: 'exact', head: true });
+
+    if (error) {
+      console.error('Failed to fetch not suitable jobs count:', error);
+      return 0;
+    }
+
+    return count || 0;
+  } catch (error) {
+    console.error('Failed to fetch not suitable jobs count:', error);
+    return 0;
   }
 }
 

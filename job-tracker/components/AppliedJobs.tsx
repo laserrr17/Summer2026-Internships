@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { Job } from '@/lib/parseReadme';
 import { signOut, onAuthStateChange, signIn, signUp } from '@/lib/authService';
-import { fetchJobs, syncJobs, getAppliedJobs, toggleJobApplication, getNotSuitableJobs, toggleJobNotSuitable } from '@/lib/jobService';
+import { syncJobs, getAppliedJobsDetailed, toggleJobApplication, type AppliedJob } from '@/lib/jobService';
 import { exportAppliedJobs } from '@/lib/storage';
 import AuthForm from '@/components/AuthForm';
 import { Input } from '@/components/ui/input';
@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { RefreshCw, Download, ExternalLink, LogOut, ArrowLeft, XCircle } from 'lucide-react';
+import { RefreshCw, Download, ExternalLink, LogOut, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import type { User } from '@supabase/supabase-js';
 
@@ -56,9 +56,7 @@ function formatAppliedDate(isoDate: string | undefined): string {
 
 export default function AppliedJobs() {
   const [user, setUser] = useState<User | null>(null);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [appliedJobs, setAppliedJobs] = useState<Map<string, string>>(new Map()); // job_id -> applied_at
-  const [notSuitableJobs, setNotSuitableJobs] = useState<Set<string>>(new Set());
+  const [appliedJobs, setAppliedJobs] = useState<AppliedJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -84,33 +82,17 @@ export default function AppliedJobs() {
   const loadJobs = async () => {
     setLoading(true);
     try {
-      console.log('Loading jobs and user data...');
-      const [jobsList, applied, notSuitable] = await Promise.all([
-        fetchJobs(),
-        getAppliedJobs(),
-        getNotSuitableJobs()
-      ]);
+      console.log('Loading applied jobs...');
+      const applied = await getAppliedJobsDetailed();
       
-      console.log(`Loaded: ${jobsList.length} jobs, ${applied.size} applied, ${notSuitable.size} not suitable`);
+      console.log(`Loaded ${applied.length} applied jobs`);
       
-      // Merge applied status and timestamp
-      const jobsWithStatus = jobsList.map(job => ({
-        ...job,
-        applied: applied.has(job.id),
-        appliedAt: applied.get(job.id),
-        notSuitable: notSuitable.has(job.id),
-      }));
-      
-      setJobs(jobsWithStatus);
       setAppliedJobs(applied);
-      setNotSuitableJobs(notSuitable);
       // Reset to first page when data refreshes to prevent empty page view
       setCurrentPage(1);
-      
-      console.log(`Jobs loaded successfully. Total: ${jobsWithStatus.length}, Applied: ${applied.size}`);
     } catch (error) {
-      console.error('Failed to load jobs:', error);
-      alert('Failed to load job listings. Please try again later.');
+      console.error('Failed to load applied jobs:', error);
+      alert('Failed to load applied jobs. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -136,66 +118,47 @@ export default function AppliedJobs() {
     }
   };
 
-  const handleToggleApplied = async (job: Job) => {
-    const currentlyApplied = appliedJobs.has(job.id);
+  const handleToggleApplied = async (appliedJob: AppliedJob) => {
+    // Convert AppliedJob to Job format for the API
+    const job: Job = {
+      id: appliedJob.job_id,
+      company: appliedJob.company,
+      role: appliedJob.role,
+      location: appliedJob.location,
+      category: appliedJob.category,
+      age: appliedJob.age,
+      applicationUrl: appliedJob.application_url || '',
+      applied: true,
+    };
     
-    // Optimistic update
-    const newAppliedJobs = new Map(appliedJobs);
-    if (currentlyApplied) {
-      newAppliedJobs.delete(job.id);
-    } else {
-      newAppliedJobs.set(job.id, new Date().toISOString());
-    }
-    
-    setAppliedJobs(newAppliedJobs);
-    setJobs(jobs.map(j => 
-      j.id === job.id ? { ...j, applied: !currentlyApplied, appliedAt: newAppliedJobs.get(job.id) } : j
-    ));
+    // Optimistically remove from list
+    setAppliedJobs(appliedJobs.filter(j => j.job_id !== appliedJob.job_id));
 
-    // Persist to backend
-    const success = await toggleJobApplication(job, currentlyApplied);
+    // Persist to backend (currentlyApplied = true means we're removing it)
+    const success = await toggleJobApplication(job, true);
     
     if (!success) {
       // Revert on failure
       setAppliedJobs(appliedJobs);
-      setJobs(jobs.map(j => 
-        j.id === job.id ? { ...j, applied: currentlyApplied, appliedAt: appliedJobs.get(job.id) } : j
-      ));
       alert('Failed to update application status. Please try again.');
     }
   };
 
-  const handleToggleNotSuitable = async (job: Job) => {
-    const currentlyNotSuitable = notSuitableJobs.has(job.id);
-    
-    // Optimistic update
-    const newNotSuitableJobs = new Set(notSuitableJobs);
-    if (currentlyNotSuitable) {
-      newNotSuitableJobs.delete(job.id);
-    } else {
-      newNotSuitableJobs.add(job.id);
-    }
-    
-    setNotSuitableJobs(newNotSuitableJobs);
-    setJobs(jobs.map(j => 
-      j.id === job.id ? { ...j, notSuitable: !currentlyNotSuitable } : j
-    ));
-
-    // Persist to backend
-    const success = await toggleJobNotSuitable(job, currentlyNotSuitable);
-    
-    if (!success) {
-      // Revert on failure
-      setNotSuitableJobs(notSuitableJobs);
-      setJobs(jobs.map(j => 
-        j.id === job.id ? { ...j, notSuitable: currentlyNotSuitable } : j
-      ));
-      alert('Failed to update not suitable status. Please try again.');
-    }
-  };
 
   const handleExport = () => {
-    exportAppliedJobs(jobs);
+    // Convert AppliedJob[] to Job[] for export
+    const jobsForExport: Job[] = appliedJobs.map(aj => ({
+      id: aj.job_id,
+      company: aj.company,
+      role: aj.role,
+      location: aj.location,
+      category: aj.category,
+      age: aj.age,
+      applicationUrl: aj.application_url ?? '',
+      applied: true,
+      appliedAt: aj.applied_at,
+    }));
+    exportAppliedJobs(jobsForExport);
   };
 
   const handleAuth = async (email: string, password: string, isSignUp: boolean) => {
@@ -209,33 +172,21 @@ export default function AppliedJobs() {
   const handleLogout = async () => {
     await signOut();
     setUser(null);
-    setJobs([]);
-    setAppliedJobs(new Map());
-    setNotSuitableJobs(new Set());
+    setAppliedJobs([]);
   };
 
   const filteredJobs = useMemo(() => {
-    return jobs
-      .filter(job => {
-        // Only show applied jobs
-        if (!job.applied) return false;
-        
-        const matchesSearch = 
-          job.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          job.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          job.location.toLowerCase().includes(searchTerm.toLowerCase());
-        
-        const matchesCategory = categoryFilter === 'all' || job.category === categoryFilter;
-        
-        return matchesSearch && matchesCategory;
-      })
-      .sort((a, b) => {
-        // Sort by applied date (most recent first)
-        if (!a.appliedAt) return 1;
-        if (!b.appliedAt) return -1;
-        return new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime();
-      });
-  }, [jobs, searchTerm, categoryFilter]);
+    return appliedJobs.filter(job => {
+      const matchesSearch = 
+        job.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.location.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesCategory = categoryFilter === 'all' || job.category === categoryFilter;
+      
+      return matchesSearch && matchesCategory;
+    });
+  }, [appliedJobs, searchTerm, categoryFilter]);
 
   // Paginated jobs
   const paginatedJobs = useMemo(() => {
@@ -252,18 +203,15 @@ export default function AppliedJobs() {
   }, [searchTerm, categoryFilter]);
 
   const categories = useMemo(() => {
-    const cats = new Set(jobs.filter(j => j.applied).map(job => job.category));
+    const cats = new Set(appliedJobs.map(job => job.category));
     return Array.from(cats).sort();
-  }, [jobs]);
+  }, [appliedJobs]);
 
   const stats = useMemo(() => {
-    const applied = jobs.filter(j => j.applied).length;
     return {
-      total: jobs.length,
-      applied,
-      remaining: jobs.length - applied,
+      applied: appliedJobs.length,
     };
-  }, [jobs]);
+  }, [appliedJobs]);
 
   if (!user) {
     return <AuthForm onAuth={handleAuth} />;
@@ -310,29 +258,13 @@ export default function AppliedJobs() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-6">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Applied</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{stats.applied}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Jobs</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Remaining</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.remaining}</div>
           </CardContent>
         </Card>
       </div>
@@ -398,7 +330,6 @@ export default function AppliedJobs() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[80px]">Remove</TableHead>
-                  <TableHead className="w-[100px]">Not Suitable</TableHead>
                   <TableHead className="w-[200px]">Company</TableHead>
                   <TableHead className="w-[250px]">Role</TableHead>
                   <TableHead className="w-[180px]">Location</TableHead>
@@ -410,41 +341,31 @@ export default function AppliedJobs() {
               <TableBody>
                 {filteredJobs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No applied jobs found. Start applying from the main page!
                     </TableCell>
                   </TableRow>
                 ) : (
                   paginatedJobs.map((job) => (
                     <TableRow 
-                      key={job.id}
-                      className={`cursor-pointer hover:bg-muted/50 transition-colors ${job.notSuitable ? 'opacity-50' : ''}`}
+                      key={job.job_id}
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
                       onClick={(e) => {
                         // Don't navigate if clicking on checkbox or button
                         if ((e.target as HTMLElement).closest('[role="checkbox"]') || 
                             (e.target as HTMLElement).closest('button')) {
                           return;
                         }
-                        if (job.applicationUrl) {
-                          window.open(job.applicationUrl, '_blank', 'noopener,noreferrer');
+                        if (job.application_url) {
+                          window.open(job.application_url, '_blank', 'noopener,noreferrer');
                         }
                       }}
                     >
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
-                          checked={job.applied}
+                          checked={true}
                           onCheckedChange={() => handleToggleApplied(job)}
                         />
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          variant={job.notSuitable ? "destructive" : "ghost"}
-                          size="sm"
-                          onClick={() => handleToggleNotSuitable(job)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <XCircle className="w-4 h-4" />
-                        </Button>
                       </TableCell>
                       <TableCell className="font-medium">{job.company}</TableCell>
                       <TableCell>{job.role}</TableCell>
@@ -455,7 +376,7 @@ export default function AppliedJobs() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm">
-                        {formatAppliedDate(job.appliedAt)}
+                        {formatAppliedDate(job.applied_at)}
                       </TableCell>
                       <TableCell>{job.age}</TableCell>
                     </TableRow>

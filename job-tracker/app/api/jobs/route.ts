@@ -34,11 +34,13 @@ export async function GET() {
 
     const supabase = getSupabaseClient();
     
+    // Fetch all active jobs (no limit - Supabase default is 1000)
     const { data: jobs, error } = await supabase
       .from('jobs')
       .select('*')
       .eq('is_active', true)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(10000); // Increased from default 1000 to support more jobs
 
     if (error) {
       console.error('Error fetching jobs from database:', error);

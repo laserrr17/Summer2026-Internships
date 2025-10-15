@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { Job } from '@/lib/parseReadme';
 import { signIn, signUp, signOut, onAuthStateChange } from '@/lib/authService';
-import { fetchJobs, syncJobs, getAppliedJobs, toggleJobApplication, getNotSuitableJobs, toggleJobNotSuitable } from '@/lib/jobService';
+import { fetchJobs, syncJobs, getAppliedJobs, toggleJobApplication, getNotSuitableJobs, toggleJobNotSuitable, getAppliedJobsCount, getNotSuitableJobsCount } from '@/lib/jobService';
 import { exportAppliedJobs } from '@/lib/storage';
 import AuthForm from '@/components/AuthForm';
 import { Input } from '@/components/ui/input';
@@ -37,6 +37,8 @@ export default function JobTracker() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [appliedJobs, setAppliedJobs] = useState<Map<string, string>>(new Map()); // job_id -> applied_at
   const [notSuitableJobs, setNotSuitableJobs] = useState<Set<string>>(new Set());
+  const [appliedCount, setAppliedCount] = useState(0);
+  const [notSuitableCount, setNotSuitableCount] = useState(0);
   const [showNotSuitable, setShowNotSuitable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -64,13 +66,15 @@ export default function JobTracker() {
     setLoading(true);
     try {
       console.log('Loading jobs and user data...');
-      const [jobsList, applied, notSuitable] = await Promise.all([
+      const [jobsList, applied, notSuitable, appliedCnt, notSuitableCnt] = await Promise.all([
         fetchJobs(),
         getAppliedJobs(),
-        getNotSuitableJobs()
+        getNotSuitableJobs(),
+        getAppliedJobsCount(),
+        getNotSuitableJobsCount()
       ]);
       
-      console.log(`Loaded: ${jobsList.length} jobs, ${applied.size} applied, ${notSuitable.size} not suitable`);
+      console.log(`Loaded: ${jobsList.length} jobs, ${appliedCnt} applied, ${notSuitableCnt} not suitable`);
       
       // Merge applied status and timestamp
       const jobsWithStatus = jobsList.map(job => ({
@@ -83,6 +87,10 @@ export default function JobTracker() {
       setJobs(jobsWithStatus);
       setAppliedJobs(applied);
       setNotSuitableJobs(notSuitable);
+      setAppliedCount(appliedCnt);
+      setNotSuitableCount(notSuitableCnt);
+      // Reset to first page when data refreshes to prevent empty page view
+      setCurrentPage(1);
       
       console.log(`Jobs loaded successfully. Total: ${jobsWithStatus.length}`);
     } catch (error) {
@@ -120,8 +128,10 @@ export default function JobTracker() {
     const newAppliedJobs = new Map(appliedJobs);
     if (currentlyApplied) {
       newAppliedJobs.delete(job.id);
+      setAppliedCount(prev => Math.max(0, prev - 1));
     } else {
       newAppliedJobs.set(job.id, new Date().toISOString());
+      setAppliedCount(prev => prev + 1);
     }
     
     setAppliedJobs(newAppliedJobs);
@@ -135,6 +145,7 @@ export default function JobTracker() {
     if (!success) {
       // Revert on failure
       setAppliedJobs(appliedJobs);
+      setAppliedCount(currentlyApplied ? appliedCount + 1 : appliedCount - 1);
       setJobs(jobs.map(j => 
         j.id === job.id ? { ...j, applied: currentlyApplied, appliedAt: appliedJobs.get(job.id) } : j
       ));
@@ -149,8 +160,10 @@ export default function JobTracker() {
     const newNotSuitableJobs = new Set(notSuitableJobs);
     if (currentlyNotSuitable) {
       newNotSuitableJobs.delete(job.id);
+      setNotSuitableCount(prev => Math.max(0, prev - 1));
     } else {
       newNotSuitableJobs.add(job.id);
+      setNotSuitableCount(prev => prev + 1);
     }
     
     setNotSuitableJobs(newNotSuitableJobs);
@@ -164,6 +177,7 @@ export default function JobTracker() {
     if (!success) {
       // Revert on failure
       setNotSuitableJobs(notSuitableJobs);
+      setNotSuitableCount(currentlyNotSuitable ? notSuitableCount + 1 : notSuitableCount - 1);
       setJobs(jobs.map(j => 
         j.id === job.id ? { ...j, notSuitable: currentlyNotSuitable } : j
       ));
@@ -189,6 +203,8 @@ export default function JobTracker() {
     setJobs([]);
     setAppliedJobs(new Map());
     setNotSuitableJobs(new Set());
+    setAppliedCount(0);
+    setNotSuitableCount(0);
   };
 
   const filteredJobs = useMemo(() => {
@@ -230,15 +246,13 @@ export default function JobTracker() {
   }, [jobs]);
 
   const stats = useMemo(() => {
-    const applied = jobs.filter(j => j.applied).length;
-    const notSuitable = jobs.filter(j => j.notSuitable).length;
     return {
       total: jobs.length,
-      applied,
-      notSuitable,
-      remaining: jobs.length - applied - notSuitable,
+      applied: appliedCount,
+      notSuitable: notSuitableCount,
+      remaining: jobs.length - appliedCount - notSuitableCount,
     };
-  }, [jobs]);
+  }, [jobs.length, appliedCount, notSuitableCount]);
 
   if (!user) {
     return <AuthForm onAuth={handleAuth} />;
@@ -382,7 +396,7 @@ export default function JobTracker() {
                 htmlFor="show-not-suitable" 
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
               >
-                Show jobs marked as not suitable ({stats.notSuitable})
+                Show jobs marked as not suitable ({notSuitableCount})
               </label>
             </div>
           </div>
