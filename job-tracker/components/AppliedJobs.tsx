@@ -251,6 +251,11 @@ export default function AppliedJobs() {
               Back to All Jobs
             </Button>
           </Link>
+          <Link href="/software-engineering">
+            <Button variant="outline" size="sm">
+              💻 SWE Jobs
+            </Button>
+          </Link>
           <Button onClick={handleLogout} variant="outline" size="sm">
             <LogOut className="w-4 h-4 mr-2" />
             Logout

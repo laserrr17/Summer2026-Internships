@@ -77,19 +77,30 @@ export async function syncJobs(): Promise<{ success: boolean; count?: number; er
 /**
  * Get all applied jobs for the current user
  * Returns a Map of job_id -> applied_at timestamp
+ * Also returns a Set of application_urls for matching by URL
  */
 export async function getAppliedJobs(): Promise<Map<string, string>> {
   try {
     const { data, error } = await supabase
       .from('applied_jobs')
-      .select('job_id, applied_at');
+      .select('job_id, applied_at, application_url');
 
     if (error) {
       console.error('Failed to fetch applied jobs:', error);
       return new Map();
     }
 
-    return new Map(data?.map(job => [job.job_id, job.applied_at]) || []);
+    const appliedMap = new Map<string, string>();
+    (data || []).forEach(job => {
+      // Map by job_id
+      appliedMap.set(job.job_id, job.applied_at);
+      // Also map by application_url if it exists (for matching when job_id changes)
+      if (job.application_url && job.application_url.trim() !== '') {
+        appliedMap.set(`url:${job.application_url.trim()}`, job.applied_at);
+      }
+    });
+
+    return appliedMap;
   } catch (error) {
     console.error('Failed to fetch applied jobs:', error);
     return new Map();
@@ -249,20 +260,31 @@ export async function updateJobNotes(jobId: string, notes: string): Promise<bool
 
 /**
  * Get all not suitable jobs for the current user
- * Returns a Set of job_ids
+ * Returns a Set of job_ids and application_urls (with 'url:' prefix)
+ * Also matches by application_url to handle cases where job_id changes
  */
 export async function getNotSuitableJobs(): Promise<Set<string>> {
   try {
     const { data, error } = await supabase
       .from('not_suitable_jobs')
-      .select('job_id');
+      .select('job_id, application_url');
 
     if (error) {
       console.error('Failed to fetch not suitable jobs:', error);
       return new Set();
     }
 
-    return new Set(data?.map(job => job.job_id) || []);
+    const notSuitableSet = new Set<string>();
+    (data || []).forEach(job => {
+      // Add job_id
+      notSuitableSet.add(job.job_id);
+      // Also add application_url if it exists (for matching when job_id changes)
+      if (job.application_url && job.application_url.trim() !== '') {
+        notSuitableSet.add(`url:${job.application_url.trim()}`);
+      }
+    });
+
+    return notSuitableSet;
   } catch (error) {
     console.error('Failed to fetch not suitable jobs:', error);
     return new Set();

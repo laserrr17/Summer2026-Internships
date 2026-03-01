@@ -26,14 +26,27 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { RefreshCw, Download, ExternalLink, LogOut, CheckCircle2, XCircle } from 'lucide-react';
+import { RefreshCw, Download, ExternalLink, LogOut, CheckCircle2, XCircle, Home } from 'lucide-react';
 import Link from 'next/link';
 import type { User } from '@supabase/supabase-js';
-import { EmptyStateIllustration, NoResultsIllustration } from '@/components/ui/illustrations';
 
 const REPO_URL = 'https://github.com/SimplifyJobs/Summer2026-Internships';
+const SOFTWARE_ENGINEERING_CATEGORY = 'Software Engineering';
 
-export default function JobTracker() {
+const isUSJob = (location: string) => {
+  if (!location) return false;
+  const usLocationRegex = /\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|USA|US|NYC|SF|DC)\b/;
+  const usStateNamesRegex = /\b(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming|united states|remote)\b/i;
+  
+  const nonUSKeywords = ['canada', 'uk', 'london', 'india', 'ireland', 'australia', 'germany', 'france', 'netherlands', 'spain', 'switzerland', 'poland', 'singapore', 'israel', 'japan', 'china', 'taiwan', 'mexico', 'brazil', 'colombia', 'argentina', 'chile', 'costa rica', 'peru', 'belgium', 'denmark', 'sweden', 'finland', 'norway', 'portugal', 'italy', 'austria', 'greece', 'czech', 'romania', 'bulgaria', 'hungary', 'south korea', 'hong kong', 'malaysia', 'indonesia', 'philippines', 'vietnam', 'thailand', 'new zealand', 'south africa', 'egypt', 'nigeria', 'kenya', 'uae', 'dubai', '🇨🇦', '🇬🇧', '🇮🇳', '🇩🇪', '🇫🇷', '🇳🇱', '🇪🇸', '🇨🇭', '🇵🇱', '🇸🇬', '🇮🇱', '🇯🇵', '🇨🇳', '🇹🇼', '🇲🇽', '🇧🇷', '🇦🇷', '🇨🇴', '🇨🇱', '🇨🇷', '🇵🇪', '🇧🇪', '🇩🇰', '🇸🇪', '🇫🇮', '🇳🇴', '🇵🇹', '🇮🇹', '🇦🇹', '🇬🇷', '🇨🇿', '🇷🇴', '🇧🇬', '🇭🇺', '🇰🇷', '🇭🇰', '🇲🇾', '🇮🇩', '🇵🇭', '🇻🇳', '🇹🇭', '🇦🇺', '🇳🇿', '🇿🇦', '🇪🇬', '🇳🇬', '🇰🇪', '🇦🇪'];
+  
+  const isUS = usLocationRegex.test(location) || usStateNamesRegex.test(location);
+  const isNonUSByKeyword = nonUSKeywords.some(keyword => location.toLowerCase().includes(keyword.toLowerCase()));
+  
+  return isUS && !isNonUSByKeyword;
+};
+
+export default function SoftwareEngineeringJobs() {
   const [user, setUser] = useState<User | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [appliedJobs, setAppliedJobs] = useState<Map<string, string>>(new Map()); // job_id -> applied_at
@@ -42,7 +55,6 @@ export default function JobTracker() {
   const [notSuitableCount, setNotSuitableCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
 
@@ -73,28 +85,28 @@ export default function JobTracker() {
         getAppliedJobsCount(),
         getNotSuitableJobsCount()
       ]);
-
+      
       console.log(`Loaded: ${jobsList.length} jobs, ${appliedCnt} applied, ${notSuitableCnt} not suitable`);
-
+      
       // Merge applied status and timestamp
       // Check both by job_id and by application_url to handle cases where job_id changes
       const jobsWithStatus = jobsList.map(job => {
         const appliedById = applied.has(job.id);
-        const appliedByUrl = job.applicationUrl && job.applicationUrl.trim() !== ''
-          ? applied.has(`url:${job.applicationUrl.trim()}`)
+        const appliedByUrl = job.applicationUrl && job.applicationUrl.trim() !== '' 
+          ? applied.has(`url:${job.applicationUrl.trim()}`) 
           : false;
         const isApplied = appliedById || appliedByUrl;
-        const appliedAt = applied.get(job.id) || (job.applicationUrl && job.applicationUrl.trim() !== ''
-          ? applied.get(`url:${job.applicationUrl.trim()}`)
+        const appliedAt = applied.get(job.id) || (job.applicationUrl && job.applicationUrl.trim() !== '' 
+          ? applied.get(`url:${job.applicationUrl.trim()}`) 
           : undefined);
-
+        
         // Check not suitable by both job_id and application_url
         const notSuitableById = notSuitable.has(job.id);
-        const notSuitableByUrl = job.applicationUrl && job.applicationUrl.trim() !== ''
-          ? notSuitable.has(`url:${job.applicationUrl.trim()}`)
+        const notSuitableByUrl = job.applicationUrl && job.applicationUrl.trim() !== '' 
+          ? notSuitable.has(`url:${job.applicationUrl.trim()}`) 
           : false;
         const isNotSuitable = notSuitableById || notSuitableByUrl;
-
+        
         return {
           ...job,
           applied: isApplied,
@@ -102,7 +114,7 @@ export default function JobTracker() {
           notSuitable: isNotSuitable,
         };
       });
-
+      
       setJobs(jobsWithStatus);
       setAppliedJobs(applied);
       setNotSuitableJobs(notSuitable);
@@ -110,7 +122,7 @@ export default function JobTracker() {
       setNotSuitableCount(notSuitableCnt);
       // Reset to first page when data refreshes to prevent empty page view
       setCurrentPage(1);
-
+      
       console.log(`Jobs loaded successfully. Total: ${jobsWithStatus.length}`);
     } catch (error) {
       console.error('Failed to load jobs:', error);
@@ -143,11 +155,11 @@ export default function JobTracker() {
   const handleToggleApplied = async (job: Job) => {
     // Check both by job_id and by application_url
     const appliedById = appliedJobs.has(job.id);
-    const appliedByUrl = job.applicationUrl && job.applicationUrl.trim() !== ''
-      ? appliedJobs.has(`url:${job.applicationUrl.trim()}`)
+    const appliedByUrl = job.applicationUrl && job.applicationUrl.trim() !== '' 
+      ? appliedJobs.has(`url:${job.applicationUrl.trim()}`) 
       : false;
     const currentlyApplied = appliedById || appliedByUrl;
-
+    
     // Optimistic update
     const newAppliedJobs = new Map(appliedJobs);
     if (currentlyApplied) {
@@ -157,20 +169,20 @@ export default function JobTracker() {
       newAppliedJobs.set(job.id, new Date().toISOString());
       setAppliedCount(prev => prev + 1);
     }
-
+    
     setAppliedJobs(newAppliedJobs);
-    setJobs(jobs.map(j =>
+    setJobs(jobs.map(j => 
       j.id === job.id ? { ...j, applied: !currentlyApplied, appliedAt: newAppliedJobs.get(job.id) } : j
     ));
 
     // Persist to backend
     const success = await toggleJobApplication(job, currentlyApplied);
-
+    
     if (!success) {
       // Revert on failure
       setAppliedJobs(appliedJobs);
       setAppliedCount(currentlyApplied ? appliedCount + 1 : appliedCount - 1);
-      setJobs(jobs.map(j =>
+      setJobs(jobs.map(j => 
         j.id === job.id ? { ...j, applied: currentlyApplied, appliedAt: appliedJobs.get(job.id) } : j
       ));
       alert('Failed to update application status. Please try again.');
@@ -180,11 +192,11 @@ export default function JobTracker() {
   const handleToggleNotSuitable = async (job: Job) => {
     // Check both by job_id and by application_url
     const notSuitableById = notSuitableJobs.has(job.id);
-    const notSuitableByUrl = job.applicationUrl && job.applicationUrl.trim() !== ''
-      ? notSuitableJobs.has(`url:${job.applicationUrl.trim()}`)
+    const notSuitableByUrl = job.applicationUrl && job.applicationUrl.trim() !== '' 
+      ? notSuitableJobs.has(`url:${job.applicationUrl.trim()}`) 
       : false;
     const currentlyNotSuitable = notSuitableById || notSuitableByUrl;
-
+    
     // Optimistic update
     const newNotSuitableJobs = new Set(notSuitableJobs);
     if (currentlyNotSuitable) {
@@ -202,20 +214,20 @@ export default function JobTracker() {
       }
       setNotSuitableCount(prev => prev + 1);
     }
-
+    
     setNotSuitableJobs(newNotSuitableJobs);
-    setJobs(jobs.map(j =>
+    setJobs(jobs.map(j => 
       j.id === job.id ? { ...j, notSuitable: !currentlyNotSuitable } : j
     ));
 
     // Persist to backend
     const success = await toggleJobNotSuitable(job, currentlyNotSuitable);
-
+    
     if (!success) {
       // Revert on failure
       setNotSuitableJobs(notSuitableJobs);
       setNotSuitableCount(currentlyNotSuitable ? notSuitableCount + 1 : notSuitableCount - 1);
-      setJobs(jobs.map(j =>
+      setJobs(jobs.map(j => 
         j.id === job.id ? { ...j, notSuitable: currentlyNotSuitable } : j
       ));
       alert('Failed to update not suitable status. Please try again.');
@@ -223,7 +235,9 @@ export default function JobTracker() {
   };
 
   const handleExport = () => {
-    exportAppliedJobs(jobs);
+    // Export only Software Engineering applied jobs
+    const seJobs = jobs.filter(job => job.category === SOFTWARE_ENGINEERING_CATEGORY);
+    exportAppliedJobs(seJobs);
   };
 
   const handleAuth = async (email: string, password: string, isSignUp: boolean) => {
@@ -244,24 +258,43 @@ export default function JobTracker() {
     setNotSuitableCount(0);
   };
 
+  // Filter jobs to only show Software Engineering jobs and sort by age ascending
   const filteredJobs = useMemo(() => {
-    return jobs.filter(job => {
+    const filtered = jobs.filter(job => {
+      // Only show Software Engineering jobs
+      if (job.category !== SOFTWARE_ENGINEERING_CATEGORY) return false;
+      
+      // Filter out non-US jobs
+      if (!isUSJob(job.location)) return false;
+      
       // Hide applied jobs from main list
       if (job.applied) return false;
-
+      
       // Always hide not suitable jobs from main list
       if (job.notSuitable) return false;
-
-      const matchesSearch =
+      
+      const matchesSearch = 
         job.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
         job.role.toLowerCase().includes(searchTerm.toLowerCase()) ||
         job.location.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesCategory = categoryFilter === 'all' || job.category === categoryFilter;
-
-      return matchesSearch && matchesCategory;
+      
+      return matchesSearch;
     });
-  }, [jobs, searchTerm, categoryFilter]);
+
+    // Sort by age in ascending order
+    return filtered.sort((a, b) => {
+      // Helper function to extract numeric age value
+      const getAgeValue = (age: string): number => {
+        if (age === 'N/A' || age === '🔒') {
+          return Infinity; // Put N/A and 🔒 at the end
+        }
+        const match = age.match(/(\d+)d/);
+        return match ? parseInt(match[1], 10) : Infinity;
+      };
+
+      return getAgeValue(a.age) - getAgeValue(b.age);
+    });
+  }, [jobs, searchTerm]);
 
   // Paginated jobs
   const paginatedJobs = useMemo(() => {
@@ -275,21 +308,21 @@ export default function JobTracker() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, categoryFilter]);
-
-  const categories = useMemo(() => {
-    const cats = new Set(jobs.map(job => job.category));
-    return Array.from(cats).sort();
-  }, [jobs]);
+  }, [searchTerm]);
 
   const stats = useMemo(() => {
+    // Calculate stats for Software Engineering jobs only, filtered for US
+    const seJobs = jobs.filter(job => job.category === SOFTWARE_ENGINEERING_CATEGORY && isUSJob(job.location));
+    const seApplied = seJobs.filter(job => job.applied).length;
+    const seNotSuitable = seJobs.filter(job => job.notSuitable).length;
+    
     return {
-      total: jobs.length,
-      applied: appliedCount,
-      notSuitable: notSuitableCount,
-      remaining: jobs.length - appliedCount - notSuitableCount,
+      total: seJobs.length,
+      applied: seApplied,
+      notSuitable: seNotSuitable,
+      remaining: seJobs.length - seApplied - seNotSuitable,
     };
-  }, [jobs.length, appliedCount, notSuitableCount]);
+  }, [jobs]);
 
   if (!user) {
     return <AuthForm onAuth={handleAuth} />;
@@ -308,144 +341,139 @@ export default function JobTracker() {
 
   return (
     <div className="container mx-auto py-8 px-4">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <Card className="glass border-none shadow-lg bg-card/40 hover:bg-card/60 transition-all duration-300">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <div className="p-2 rounded-full bg-primary/10 text-primary">
-                <RefreshCw className="w-4 h-4" />
-              </div>
-              Total Jobs
-            </CardTitle>
+      <div className="mb-8 flex justify-between items-start">
+        <div>
+          <h1 className="text-4xl font-bold mb-2">💻 Software Engineering Internships</h1>
+          <p className="text-muted-foreground">
+            Track Software Engineering applications from {' '}
+            <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">
+              SimplifyJobs/Summer2026-Internships
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Logged in as: {user.email}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Link href="/">
+            <Button variant="outline" size="sm">
+              <Home className="w-4 h-4 mr-2" />
+              All Jobs
+            </Button>
+          </Link>
+          <Link href="/applied">
+            <Button variant="outline" size="sm">
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              Applied Jobs ({appliedCount})
+            </Button>
+          </Link>
+          <Button onClick={handleLogout} variant="outline" size="sm">
+            <LogOut className="w-4 h-4 mr-2" />
+            Logout
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total SWE Jobs</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight">{stats.total}</div>
-            <p className="text-xs text-muted-foreground mt-1">Available positions</p>
+            <div className="text-2xl font-bold">{stats.total}</div>
           </CardContent>
         </Card>
-        <Card className="glass border-none shadow-lg bg-card/40 hover:bg-card/60 transition-all duration-300">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <div className="p-2 rounded-full bg-green-500/10 text-green-500">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-              Applied
-            </CardTitle>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Applied</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-green-500">{stats.applied}</div>
-            <p className="text-xs text-muted-foreground mt-1">Applications sent</p>
+            <div className="text-2xl font-bold text-green-600">{stats.applied}</div>
           </CardContent>
         </Card>
-        <Card className="glass border-none shadow-lg bg-card/40 hover:bg-card/60 transition-all duration-300">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <div className="p-2 rounded-full bg-red-500/10 text-red-500">
-                <XCircle className="w-4 h-4" />
-              </div>
-              Not Suitable
-            </CardTitle>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Not Suitable</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-red-500">{stats.notSuitable}</div>
-            <p className="text-xs text-muted-foreground mt-1">Hidden jobs</p>
+            <div className="text-2xl font-bold text-red-600">{stats.notSuitable}</div>
           </CardContent>
         </Card>
-        <Card className="glass border-none shadow-lg bg-card/40 hover:bg-card/60 transition-all duration-300">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <div className="p-2 rounded-full bg-blue-500/10 text-blue-500">
-                <ExternalLink className="w-4 h-4" />
-              </div>
-              Remaining
-            </CardTitle>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Remaining</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold tracking-tight text-blue-500">{stats.remaining}</div>
-            <p className="text-xs text-muted-foreground mt-1">To apply</p>
+            <div className="text-2xl font-bold text-blue-600">{stats.remaining}</div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 mb-6 items-center justify-between bg-card/30 p-4 rounded-xl border border-white/5 backdrop-blur-sm">
-        <div className="flex flex-1 w-full md:w-auto gap-4">
-          <div className="relative flex-1 md:max-w-md">
-            <Input
-              placeholder="Search company, role, or location..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-background/50 border-white/10 focus:border-primary/50 transition-colors pl-10"
-            />
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+          <CardDescription>Search and filter Software Engineering job listings</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row gap-4">
+              <Input
+                placeholder="Search company, role, or location..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="flex-1"
+              />
+              <div className="flex gap-2">
+                <Button 
+                  onClick={loadJobs} 
+                  variant="outline" 
+                  size="icon"
+                  title="Refresh job list"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
+                <Button 
+                  onClick={handleSyncJobs} 
+                  variant="outline" 
+                  size="sm"
+                  title="Sync jobs from GitHub"
+                >
+                  Sync
+                </Button>
+                <Button 
+                  onClick={handleExport} 
+                  variant="outline" 
+                  size="icon"
+                  title="Export applied jobs"
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </div>
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-[180px] bg-background/50 border-white/10">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map(cat => (
-                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        </CardContent>
+      </Card>
 
-        <div className="flex gap-2 w-full md:w-auto justify-end">
-          <Button
-            onClick={loadJobs}
-            variant="outline"
-            size="icon"
-            title="Refresh job list"
-            className="bg-background/50 border-white/10 hover:bg-primary/10 hover:text-primary hover:border-primary/30"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </Button>
-          <Button
-            onClick={handleSyncJobs}
-            variant="outline"
-            size="sm"
-            title="Sync jobs from GitHub"
-            className="bg-background/50 border-white/10 hover:bg-primary/10 hover:text-primary hover:border-primary/30"
-          >
-            Sync
-          </Button>
-          <Button
-            onClick={handleExport}
-            variant="outline"
-            size="icon"
-            title="Export applied jobs"
-            className="bg-background/50 border-white/10 hover:bg-primary/10 hover:text-primary hover:border-primary/30"
-          >
-            <Download className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
-
-      <Card className="glass border-none shadow-xl bg-card/30 backdrop-blur-md overflow-hidden">
+      <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
-              <TableHeader className="bg-muted/50">
-                <TableRow className="hover:bg-transparent border-white/5">
+              <TableHeader>
+                <TableRow>
                   <TableHead className="w-[80px]">Applied</TableHead>
                   <TableHead className="w-[100px]">Not Suitable</TableHead>
                   <TableHead className="w-[200px]">Company</TableHead>
                   <TableHead className="w-[250px]">Role</TableHead>
                   <TableHead className="w-[180px]">Location</TableHead>
-                  <TableHead className="w-[120px]">Category</TableHead>
                   <TableHead className="w-[80px]">Age</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {jobs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12">
+                    <TableCell colSpan={6} className="text-center py-12">
                       <div className="flex flex-col items-center gap-4">
-                        <EmptyStateIllustration className="w-48 h-36 mx-auto mb-4" />
                         <p className="text-lg font-medium">No jobs in database</p>
                         <p className="text-sm text-muted-foreground">Click the "Sync" button above to load jobs from GitHub</p>
                         <Button onClick={handleSyncJobs} variant="default">
@@ -457,23 +485,19 @@ export default function JobTracker() {
                   </TableRow>
                 ) : filteredJobs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12">
-                      <div className="flex flex-col items-center gap-4">
-                        <NoResultsIllustration className="w-48 h-36 mx-auto mb-4" />
-                        <p className="text-lg font-medium">No jobs found</p>
-                        <p className="text-sm text-muted-foreground">Try adjusting your search or category filter</p>
-                      </div>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      No Software Engineering jobs found matching your filters. Try adjusting your search.
                     </TableCell>
                   </TableRow>
                 ) : (
                   paginatedJobs.map((job) => (
-                    <TableRow
-                      key={job.id}
-                      className={`cursor-pointer hover:bg-primary/5 transition-colors border-white/5 ${job.notSuitable ? 'opacity-50' : ''}`}
+                    <TableRow 
+                      key={job.id} 
+                      className={`cursor-pointer hover:bg-muted/50 transition-colors ${job.notSuitable ? 'opacity-50' : ''}`}
                       onClick={(e) => {
                         // Don't navigate if clicking on checkbox or button
-                        if ((e.target as HTMLElement).closest('[role="checkbox"]') ||
-                          (e.target as HTMLElement).closest('button')) {
+                        if ((e.target as HTMLElement).closest('[role="checkbox"]') || 
+                            (e.target as HTMLElement).closest('button')) {
                           return;
                         }
                         if (job.applicationUrl) {
@@ -485,7 +509,6 @@ export default function JobTracker() {
                         <Checkbox
                           checked={job.applied}
                           onCheckedChange={() => handleToggleApplied(job)}
-                          className="border-white/20 data-[state=checked]:bg-green-500 data-[state=checked]:border-green-500"
                         />
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -493,20 +516,15 @@ export default function JobTracker() {
                           variant={job.notSuitable ? "destructive" : "ghost"}
                           size="sm"
                           onClick={() => handleToggleNotSuitable(job)}
-                          className="h-8 w-8 p-0 hover:bg-red-500/20 hover:text-red-500"
+                          className="h-8 w-8 p-0"
                         >
                           <XCircle className="w-4 h-4" />
                         </Button>
                       </TableCell>
-                      <TableCell className="font-medium text-foreground/90">{job.company}</TableCell>
-                      <TableCell className="text-foreground/80">{job.role}</TableCell>
-                      <TableCell className="text-muted-foreground">{job.location}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="whitespace-nowrap bg-primary/5 border-primary/20 text-primary hover:bg-primary/10">
-                          {job.category}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{job.age}</TableCell>
+                      <TableCell className="font-medium">{job.company}</TableCell>
+                      <TableCell>{job.role}</TableCell>
+                      <TableCell>{job.location}</TableCell>
+                      <TableCell>{job.age}</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -520,8 +538,8 @@ export default function JobTracker() {
       <div className="mt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Items per page:</span>
-          <Select
-            value={itemsPerPage.toString()}
+          <Select 
+            value={itemsPerPage.toString()} 
             onValueChange={(value) => {
               setItemsPerPage(Number(value));
               setCurrentPage(1);
@@ -585,3 +603,4 @@ export default function JobTracker() {
     </div>
   );
 }
+

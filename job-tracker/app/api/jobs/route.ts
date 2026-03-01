@@ -138,6 +138,30 @@ export async function POST() {
     // Store jobs in database
     const supabase = getSupabaseClient();
 
+    // Fetch all existing jobs (including inactive) to match by application_url
+    console.log('Fetching existing jobs to match by application_url...');
+    const { data: existingJobs, error: fetchError } = await supabase
+      .from('jobs')
+      .select('id, application_url');
+
+    if (fetchError) {
+      console.error('Error fetching existing jobs:', fetchError);
+      return NextResponse.json(
+        { error: `Database error: ${fetchError.message}` },
+        { status: 500 }
+      );
+    }
+
+    // Create a map of application_url -> existing job id
+    const existingJobsByUrl = new Map<string, string>();
+    (existingJobs || []).forEach(job => {
+      if (job.application_url && job.application_url.trim() !== '') {
+        existingJobsByUrl.set(job.application_url.trim(), job.id);
+      }
+    });
+
+    console.log(`Found ${existingJobsByUrl.size} existing jobs with application URLs`);
+
     // Mark all existing jobs as inactive first
     console.log('Marking existing jobs as inactive...');
     const { error: updateError } = await supabase
@@ -153,20 +177,31 @@ export async function POST() {
       );
     }
 
-    // Insert or update jobs
-    const jobsToUpsert = jobs.map(job => ({
-      id: job.id,
-      company: job.company,
-      role: job.role,
-      location: job.location,
-      category: job.category,
-      age: job.age,
-      application_url: job.applicationUrl || null,
-      is_active: true,
-      updated_at: new Date().toISOString()
-    }));
+    // Prepare jobs for upsert: use existing id if found by application_url, otherwise use new id
+    const jobsToUpsert = jobs.map(job => {
+      const applicationUrl = job.applicationUrl?.trim() || '';
+      // If a job with this application_url already exists, use its existing id
+      // This preserves references in applied_jobs table
+      const existingId = applicationUrl ? existingJobsByUrl.get(applicationUrl) : null;
+      const jobId = existingId || job.id;
 
-    console.log(`Upserting ${jobsToUpsert.length} jobs...`);
+      return {
+        id: jobId,
+        company: job.company,
+        role: job.role,
+        location: job.location,
+        category: job.category,
+        age: job.age,
+        application_url: applicationUrl || null,
+        is_active: true,
+        updated_at: new Date().toISOString()
+      };
+    });
+
+    const newJobsCount = jobsToUpsert.filter(job => !existingJobsByUrl.has(job.application_url || '')).length;
+    const updatedJobsCount = jobsToUpsert.length - newJobsCount;
+    console.log(`Upserting ${jobsToUpsert.length} jobs (${newJobsCount} new, ${updatedJobsCount} updated)...`);
+    
     const { error: upsertError, count } = await supabase
       .from('jobs')
       .upsert(jobsToUpsert, { 
@@ -202,11 +237,13 @@ export async function POST() {
       );
     }
 
-    console.log(`Successfully synced ${jobs.length} jobs`);
+    console.log(`Successfully synced ${jobs.length} jobs (${newJobsCount} new, ${updatedJobsCount} updated)`);
     return NextResponse.json({ 
       success: true,
       count: jobs.length,
-      message: `Successfully synced ${jobs.length} jobs`
+      newJobs: newJobsCount,
+      updatedJobs: updatedJobsCount,
+      message: `Successfully synced ${jobs.length} jobs (${newJobsCount} new, ${updatedJobsCount} updated)`
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
